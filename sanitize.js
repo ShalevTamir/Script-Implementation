@@ -295,18 +295,4 @@ function main(argv) {
   }
 }
 
-if (require.main === module) {
-  main(process.argv.slice(2));
-}
-
-module.exports = {
-  loadMappingTable,
-  applySubstitution,
-  containsMatch,
-  isBinaryFile,
-  renamePaths,
-  substituteFileContents,
-  residualCheck,
-  runExport,
-  runImport,
-};
+main(process.argv.slice(2));
