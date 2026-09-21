@@ -1,2 +1,5 @@
 public-network/
+exports/
 node_modules/
+obj/
+bin/
