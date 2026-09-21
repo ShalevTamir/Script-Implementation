@@ -1,0 +1,12 @@
+{
+  "entries": [
+    { "real": "MockDotnetLibrary", "mock": "OpenDotnetLibrary" },
+    { "real": "MockDotnetApi",     "mock": "OpenDotnetApi" },
+    { "real": "MockNodeLibrary",   "mock": "OpenNodeLibrary" },
+    { "real": "MockNestApi",       "mock": "OpenNestApi" },
+    { "real": "mock-node-library", "mock": "open-node-library" },
+    { "real": "mock-nest-api",     "mock": "open-nest-api" },
+    { "real": "Falcon",            "mock": "Heron" },
+    { "real": "InternalSecretKey", "mock": "SampleSecretKey" }
+  ]
+}
