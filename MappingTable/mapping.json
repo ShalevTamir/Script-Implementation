@@ -9,5 +9,6 @@
     { "real": "Falcon",            "mock": "Heron" },
     { "real": "InternalSecretKey", "mock": "SampleSecretKey" }
   ],
-  "exclusions": ["MockDotnetLibrary/src/internal-only", "MockDotnetLibrary/src/internal-only.cs"]
+  "exclusions": ["MockDotnetLibrary/src/internal-only", "MockDotnetLibrary/src/internal-only.cs"],
+  "linesToRemove": ["*classified debug note*"]
 }
