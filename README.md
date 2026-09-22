@@ -41,26 +41,28 @@ in-place import, reconstructing real values back into your working copy).
 
 ### Mapping table
 
-One shared `MappingTable/mapping.json`: `{"entries": [{"real": "...",
-"mock": "..."}]}`. Defaults to the copy next to `sanitize.js`; override with
-the `SANITIZER_MAPPING_TABLE` env var.
+One shared `MappingTable/mapping.json`, defaults to the copy next to
+`sanitize.js` (override with the `SANITIZER_MAPPING_TABLE` env var):
 
-### Exclusions (hardcoded, not per-project config)
-
-Any file or directory with one of these exact names, anywhere in the tree of
-*any* project, is stripped on export — no `exclusions.json`, no per-repo
-setup:
-
-```js
-const EXCLUDED_NAMES = new Set(['internal-only', 'internal-only.ts', 'internal-only.cs']);
+```json
+{
+  "entries": [{ "real": "...", "mock": "..." }],
+  "exclusions": ["internal-only", "internal-only.ts", "internal-only.cs"]
+}
 ```
+
+### Exclusions (from the mapping table, not per-project config)
+
+Any file or directory with one of the exact names listed in `exclusions`,
+anywhere in the tree of *any* project, is stripped on export — no
+`exclusions.json`, no per-repo setup.
 
 Nothing special is needed to "restore" them on import: since they were
 never part of the exported/public tree, import copies `<inputPath>` onto
 `<outputPath>` as an *overlay* (only adds/overwrites files present in
 `<inputPath>`, never deletes anything already at `<outputPath>` that isn't
 there) — so pre-existing excluded files at the destination are simply never
-touched. Extend `EXCLUDED_NAMES` in `sanitize.js` for other cases.
+touched.
 
 ## What the script does
 
@@ -115,5 +117,5 @@ key/path and `import` both become `open-node-library`), because both sides
 read the same shared mapping table.
 
 `MockDotnetLibrary` additionally has `src/internal-only/live-secrets.txt`
-and `src/internal-only.cs`, exercising the hardcoded exclusion list — both
-must never appear in export output.
+and `src/internal-only.cs`, exercising the mapping table's `exclusions` list
+— both must never appear in export output.

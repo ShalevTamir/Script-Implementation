@@ -3,7 +3,7 @@
 
 /**
  * Single-file, zero-dependency sanitizer: plain substring substitution over
- * file text, path renaming, hardcoded-name exclusion strip/restore, and a
+ * file text, path renaming, name-based exclusion strip/restore, and a
  * residual leak-check gate. Language-agnostic by design - it never parses
  * source as an AST, only as text, so it works the same for .cs, .ts, .json,
  * .xml/.csproj, .html, or anything else.
@@ -12,20 +12,15 @@
  *   node sanitize.js export <inputPath> <outputPath>
  *   node sanitize.js import <inputPath> <outputPath>
  *
- * No per-project config needed - the mapping table lives alongside this
- * script (MappingTable/mapping.json, override with SANITIZER_MAPPING_TABLE),
- * and excluded names are hardcoded below.
+ * No per-project config needed - both the mapping entries and the excluded
+ * names live in one shared mapping table (MappingTable/mapping.json,
+ * override with SANITIZER_MAPPING_TABLE).
  */
 
 const fs = require('fs');
 const path = require('path');
 
 const SKIP_DIR_NAMES = new Set(['.git', 'node_modules', 'bin', 'obj', 'dist']);
-
-// Any file or directory with one of these exact names, anywhere in the
-// tree, is stripped on export and restored on import - regardless of which
-// project it's run against.
-const EXCLUDED_NAMES = new Set(['internal-only', 'internal-only.ts', 'internal-only.cs']);
 
 const DEFAULT_MAPPING_TABLE_PATH =
   process.env.SANITIZER_MAPPING_TABLE || path.join(__dirname, 'MappingTable', 'mapping.json');
@@ -37,7 +32,7 @@ const BINARY_SNIFF_BYTES = 8192;
 // ---------------------------------------------------------------------------
 
 function loadMappingTable(mappingTablePath) {
-  const { entries = [] } = JSON.parse(fs.readFileSync(mappingTablePath, 'utf8'));
+  const { entries = [], exclusions = [] } = JSON.parse(fs.readFileSync(mappingTablePath, 'utf8'));
 
   const seenReal = new Set();
   const seenMock = new Set();
@@ -55,6 +50,7 @@ function loadMappingTable(mappingTablePath) {
     forExport: () => sortLongestFirst(entries.map((e) => ({ from: e.real, to: e.mock }))),
     forImport: () => sortLongestFirst(entries.map((e) => ({ from: e.mock, to: e.real }))),
     realValues: () => entries.map((e) => e.real),
+    excludedNames: () => new Set(exclusions),
   };
 }
 
@@ -122,18 +118,18 @@ function walkFiles(root, callback) {
 }
 
 // ---------------------------------------------------------------------------
-// Exclusion (hardcoded names)
+// Exclusion (names from the mapping table's "exclusions" list)
 //
 // Matches are by exact basename, anywhere in the tree, and are not recursed
 // into further - a matched directory moves as a whole unit.
 // ---------------------------------------------------------------------------
 
-function stripExcludedEntries(root) {
+function stripExcludedEntries(root, excludedNames) {
   if (!fs.existsSync(root)) return;
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir)) {
       const full = path.join(dir, entry);
-      if (EXCLUDED_NAMES.has(entry)) {
+      if (excludedNames.has(entry)) {
         fs.rmSync(full, { recursive: true, force: true });
         continue;
       }
@@ -238,7 +234,7 @@ function runExport(inputRoot, outputRoot) {
   const projectRoot = path.join(outputRoot, applySubstitution(path.basename(inputRoot), exportPairs));
   fs.rmSync(projectRoot, { recursive: true, force: true });
   copyRecursive(inputRoot, projectRoot);
-  stripExcludedEntries(projectRoot);
+  stripExcludedEntries(projectRoot, mapping.excludedNames());
   renamePaths(projectRoot, exportPairs);
   substituteFileContents(projectRoot, exportPairs);
 
