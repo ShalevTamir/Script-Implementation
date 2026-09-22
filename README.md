@@ -47,14 +47,18 @@ One shared `MappingTable/mapping.json`, defaults to the copy next to
 ```json
 {
   "entries": [{ "real": "...", "mock": "..." }],
-  "exclusions": ["internal-only", "internal-only.ts", "internal-only.cs"]
+  "exclusions": ["MockDotnetLibrary/src/internal-only", "MockDotnetLibrary/src/internal-only.cs"]
 }
 ```
 
 ### Exclusions (from the mapping table, not per-project config)
 
-Any file or directory with one of the exact names listed in `exclusions`,
-anywhere in the tree of *any* project, is stripped on export — no
+Each `exclusions` entry is `<projectBasename>/<pathRelativeToProjectRoot>` -
+scoped to one project by its folder name, since the table is shared across
+all of them. On export, an entry only applies when it starts with
+`<inputPath>`'s own basename + `/`; the remainder is the exact path (not a
+bare name) stripped from the project root — so `internal-only.js` sitting in
+some *other* project, not listed under its name, is left alone. No
 `exclusions.json`, no per-repo setup.
 
 Nothing special is needed to "restore" them on import: since they were

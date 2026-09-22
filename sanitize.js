@@ -50,7 +50,13 @@ function loadMappingTable(mappingTablePath) {
     forExport: () => sortLongestFirst(entries.map((e) => ({ from: e.real, to: e.mock }))),
     forImport: () => sortLongestFirst(entries.map((e) => ({ from: e.mock, to: e.real }))),
     realValues: () => entries.map((e) => e.real),
-    excludedNames: () => new Set(exclusions),
+    // exclusions entries are "<projectBasename>/<pathRelativeToProjectRoot>" -
+    // the shared table can list exclusions for many projects at once, so
+    // each one is scoped by which project's own folder name it starts with.
+    excludedPathsFor: (projectBasename) => {
+      const prefix = `${projectBasename}/`;
+      return exclusions.filter((entry) => entry.startsWith(prefix)).map((entry) => entry.slice(prefix.length));
+    },
   };
 }
 
@@ -118,25 +124,14 @@ function walkFiles(root, callback) {
 }
 
 // ---------------------------------------------------------------------------
-// Exclusion (names from the mapping table's "exclusions" list)
-//
-// Matches are by exact basename, anywhere in the tree, and are not recursed
-// into further - a matched directory moves as a whole unit.
+// Exclusion (paths from the mapping table's "exclusions" list, relative to
+// the project root - see excludedPathsFor above)
 // ---------------------------------------------------------------------------
 
-function stripExcludedEntries(root, excludedNames) {
-  if (!fs.existsSync(root)) return;
-  const walk = (dir) => {
-    for (const entry of fs.readdirSync(dir)) {
-      const full = path.join(dir, entry);
-      if (excludedNames.has(entry)) {
-        fs.rmSync(full, { recursive: true, force: true });
-        continue;
-      }
-      if (fs.statSync(full).isDirectory()) walk(full);
-    }
-  };
-  walk(root);
+function stripExcludedEntries(projectRoot, relativePaths) {
+  for (const relativePath of relativePaths) {
+    fs.rmSync(path.join(projectRoot, relativePath), { recursive: true, force: true });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -234,7 +229,7 @@ function runExport(inputRoot, outputRoot) {
   const projectRoot = path.join(outputRoot, applySubstitution(path.basename(inputRoot), exportPairs));
   fs.rmSync(projectRoot, { recursive: true, force: true });
   copyRecursive(inputRoot, projectRoot);
-  stripExcludedEntries(projectRoot, mapping.excludedNames());
+  stripExcludedEntries(projectRoot, mapping.excludedPathsFor(path.basename(inputRoot)));
   renamePaths(projectRoot, exportPairs);
   substituteFileContents(projectRoot, exportPairs);
 
