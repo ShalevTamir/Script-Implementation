@@ -47,7 +47,8 @@ One shared `MappingTable/mapping.json`, defaults to the copy next to
 ```json
 {
   "entries": [{ "real": "...", "mock": "..." }],
-  "exclusions": ["MockDotnetLibrary/src/internal-only", "MockDotnetLibrary/src/internal-only.cs"]
+  "exclusions": ["MockDotnetLibrary/src/internal-only", "MockDotnetLibrary/src/internal-only.cs"],
+  "linesToRemove": ["*classified debug note*"]
 }
 ```
 
@@ -68,6 +69,18 @@ never part of the exported/public tree, import copies `<inputPath>` onto
 there) — so pre-existing excluded files at the destination are simply never
 touched.
 
+### Lines to remove (glob patterns, export only)
+
+`linesToRemove` is a flat list of glob patterns (`*` = any run of
+characters, everything else literal, matched against the whole line) applied
+across every project. Any line matching any pattern is deleted entirely
+during export. For a line `The cat is very high`, any of `*cat is*`,
+`*cat is very high`, or `The cat*` matches it.
+
+This only runs on export, not import: deleting a line loses information
+there's nothing to reverse-map back from, unlike substitution or exclusion
+(which just skips copying a file that still exists at the source).
+
 ## What the script does
 
 Substitution is plain substring replace (`text.replaceAll(from, to)`) — if a
@@ -83,14 +96,15 @@ on; `<inputPath>` is read-only throughout):
    `.git`, `node_modules`, `bin`, `obj`, `dist`) — `<outputPath>` is a
    container, so multiple projects can be exported into the same one without
    clobbering each other.
-2. Strip excluded names.
-3. Rename files/directories whose name contains a mapping entry, deepest
+2. Strip excluded paths.
+3. Delete any line matching a `linesToRemove` glob pattern.
+4. Rename files/directories whose name contains a mapping entry, deepest
    path first.
-4. Substitute matching text in every non-binary file (binary detected by
+5. Substitute matching text in every non-binary file (binary detected by
    sniffing for a NUL byte, not a fixed extension list) — one pass covers
    identifiers, comments, string literals, JSON keys/values, XML attributes,
    markdown, anything, since it's all just text.
-5. Re-scan the output for any real value that's still present and fail
+6. Re-scan the output for any real value that's still present and fail
    loudly if so — nothing should be pushed if this gate fails.
 
 **Import** (additive only, never deletes pre-existing content at

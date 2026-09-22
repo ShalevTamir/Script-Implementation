@@ -32,7 +32,11 @@ const BINARY_SNIFF_BYTES = 8192;
 // ---------------------------------------------------------------------------
 
 function loadMappingTable(mappingTablePath) {
-  const { entries = [], exclusions = [] } = JSON.parse(fs.readFileSync(mappingTablePath, 'utf8'));
+  const {
+    entries = [],
+    exclusions = [],
+    linesToRemove = [],
+  } = JSON.parse(fs.readFileSync(mappingTablePath, 'utf8'));
 
   const seenReal = new Set();
   const seenMock = new Set();
@@ -57,7 +61,21 @@ function loadMappingTable(mappingTablePath) {
       const prefix = `${projectBasename}/`;
       return exclusions.filter((entry) => entry.startsWith(prefix)).map((entry) => entry.slice(prefix.length));
     },
+    lineRemovalPatterns: () => linesToRemove.map(globToLineRegExp),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Glob-style line matching for "linesToRemove" - "*" matches any run of
+// characters, everything else is literal. Matched against the whole line.
+// ---------------------------------------------------------------------------
+
+function escapeRegExpChars(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function globToLineRegExp(pattern) {
+  return new RegExp(`^${pattern.split('*').map(escapeRegExpChars).join('.*')}$`);
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +208,22 @@ function substituteFileContents(root, pairs) {
 }
 
 // ---------------------------------------------------------------------------
+// Line removal (export only - deleting a line loses information there's
+// nothing to reverse-map on import, unlike substitution)
+// ---------------------------------------------------------------------------
+
+function removeMatchingLines(root, patterns) {
+  if (patterns.length === 0) return;
+  walkFiles(root, (filePath) => {
+    if (isBinaryFile(filePath)) return;
+    const original = fs.readFileSync(filePath, 'utf8');
+    const lines = original.split('\n');
+    const kept = lines.filter((line) => !patterns.some((re) => re.test(line.replace(/\r$/, ''))));
+    if (kept.length !== lines.length) fs.writeFileSync(filePath, kept.join('\n'), 'utf8');
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Residual check gate (export only)
 // ---------------------------------------------------------------------------
 
@@ -230,6 +264,7 @@ function runExport(inputRoot, outputRoot) {
   fs.rmSync(projectRoot, { recursive: true, force: true });
   copyRecursive(inputRoot, projectRoot);
   stripExcludedEntries(projectRoot, mapping.excludedPathsFor(path.basename(inputRoot)));
+  removeMatchingLines(projectRoot, mapping.lineRemovalPatterns());
   renamePaths(projectRoot, exportPairs);
   substituteFileContents(projectRoot, exportPairs);
 
