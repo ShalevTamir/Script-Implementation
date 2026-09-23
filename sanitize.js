@@ -25,7 +25,7 @@ const path = require('path');
 // stop them being checked for leaked real values: `verify <path>` runs the
 // same residual check directly against wherever bin/obj/dist actually live
 // (e.g. after rebuilding from the exported source), independent of export.
-const SKIP_DIR_NAMES = new Set(['.git', 'node_modules', 'obj', 'bin', 'dist', '.vs']);
+const SKIP_DIR_NAMES = new Set(['.git', 'node_modules', 'obj', 'bin', 'dist', '.vs', '.angular']);
 
 const DEFAULT_MAPPING_TABLE_PATH =
   process.env.SANITIZER_MAPPING_TABLE || path.join(__dirname, 'MappingTable', 'mapping.json');
