@@ -104,10 +104,10 @@ being replaced first.
 exactly mirrors `<inputPath>`, then only touches that subfolder from there
 on; `<inputPath>` is read-only throughout):
 1. Copy `<inputPath>` into `<outputPath>/<sanitizedProjectName>` (skipping
-   `.git`, `node_modules`, `obj` — but not `bin`/`dist`, since that's where
-   final compiled DLLs and bundled JS live and step 6 needs them present to
-   check) — `<outputPath>` is a container, so multiple projects can be
-   exported into the same one without clobbering each other.
+   `.git`, `node_modules`, `obj`, `bin`, `dist` — build artifacts/intermediates
+   never belong in exported source) — `<outputPath>` is a container, so
+   multiple projects can be exported into the same one without clobbering
+   each other.
 2. Strip excluded paths. If an excluded path is (or contains) a `.csproj`,
    any `.sln` file in the tree also has that project's `Project(...) ...
    EndProject` block removed, along with every `GlobalSection` line keyed by
@@ -129,7 +129,10 @@ on; `<inputPath>` is read-only throughout):
    type/method/string names UTF-16LE in their metadata), so a leak baked
    into a DLL still fails the gate even though it wasn't (and can't safely
    be) rewritten in step 5 - the fix is rebuilding from sanitized source,
-   not patching the binary.
+   not patching the binary. Since `bin`/`dist` are skipped during copy (step
+   1), this only sees whatever compiled output happens to already be at
+   `<inputPath>` — rebuild from the sanitized source and run `verify
+   <path-to-bin-or-dist>` separately to check the actual shipped artifacts.
 
 **Import** (additive only, never deletes pre-existing content at
 `<outputPath>`):
