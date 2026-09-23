@@ -164,6 +164,19 @@ function walkFiles(root, callback) {
   }
 }
 
+// Like walkFiles, but also visits directories themselves (not just the files
+// inside them) - needed to check a directory's own name, not only file names.
+function walkAllPaths(root, callback) {
+  if (!fs.existsSync(root)) return;
+  for (const entry of fs.readdirSync(root)) {
+    const full = path.join(root, entry);
+    callback(full);
+    if (fs.statSync(full).isDirectory()) {
+      walkAllPaths(full, callback);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Exclusion (paths from the mapping table's "exclusions" list, relative to
 // the project root - see excludedPathsFor above)
@@ -385,22 +398,36 @@ function bufferContainsValueAtBoundary(buffer, value) {
 
 function residualCheck(root, realValues) {
   const findings = [];
+
+  // File/directory names - renamePaths already handles this on export, but
+  // the gate re-checks independently rather than trusting that pass (e.g.
+  // verify may run standalone against a tree that was never renamed).
+  walkAllPaths(root, (entryPath) => {
+    const boundaryOnly = isUnderSkippedDir(root, entryPath);
+    const name = path.basename(entryPath);
+    for (const real of realValues) {
+      const hit = boundaryOnly ? containsMatchAtBoundary(name, real) : containsMatch(name, real);
+      if (hit) findings.push({ file: entryPath, value: real, location: 'name' });
+    }
+  });
+
   walkFiles(root, (filePath) => {
     const boundaryOnly = isUnderSkippedDir(root, filePath);
     if (isBinaryFile(filePath)) {
       const buffer = fs.readFileSync(filePath);
       for (const real of realValues) {
         const hit = boundaryOnly ? bufferContainsValueAtBoundary(buffer, real) : bufferContainsValue(buffer, real);
-        if (hit) findings.push({ file: filePath, value: real });
+        if (hit) findings.push({ file: filePath, value: real, location: 'content' });
       }
       return;
     }
     const text = fs.readFileSync(filePath, 'utf8');
     for (const real of realValues) {
       const hit = boundaryOnly ? containsMatchAtBoundary(text, real) : containsMatch(text, real);
-      if (hit) findings.push({ file: filePath, value: real });
+      if (hit) findings.push({ file: filePath, value: real, location: 'content' });
     }
   });
+
   return findings;
 }
 
@@ -418,8 +445,9 @@ function assertDistinctPaths(inputRoot, outputRoot) {
 function reportResidualFindings(failureHeader, findings) {
   if (findings.length === 0) return true;
   console.error(failureHeader);
-  for (const { file, value } of findings) {
-    console.error(`[GATE FAIL] residual real value '${value}' found in ${file}`);
+  for (const { file, value, location } of findings) {
+    const where = location === 'name' ? 'name of' : 'content of';
+    console.error(`[GATE FAIL] residual real value '${value}' found in ${where} ${file}`);
   }
   return false;
 }
