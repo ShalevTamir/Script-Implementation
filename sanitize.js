@@ -333,7 +333,23 @@ function removeMatchingLines(root, patterns) {
 // anything having actually leaked. Only there, matching requires a real
 // word boundary; everywhere else stays plain substring, since this org's
 // own source doesn't have that generic-text collision risk.
+//
+// The same coincidental-byte-match risk applies to any generic binary asset
+// (images, fonts, archives, media) regardless of which directory it's in -
+// e.g. a .png's compressed pixel data is effectively high-entropy noise, so
+// a short real value's byte sequence can turn up in it purely by chance.
+// These get the word-boundary treatment by extension, independent of path.
 // ---------------------------------------------------------------------------
+
+const GENERIC_BINARY_ASSET_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp', '.tiff',
+  '.woff', '.woff2', '.ttf', '.otf', '.eot',
+  '.pdf', '.zip', '.gz', '.7z', '.mp3', '.mp4', '.wav', '.mov', '.avi', '.ogg', '.flac',
+]);
+
+function isGenericBinaryAsset(filePath) {
+  return GENERIC_BINARY_ASSET_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
 
 function isWordChar(codeUnit) {
   return (
@@ -412,8 +428,8 @@ function residualCheck(root, realValues) {
   });
 
   walkFiles(root, (filePath) => {
-    const boundaryOnly = isUnderSkippedDir(root, filePath);
     if (isBinaryFile(filePath)) {
+      const boundaryOnly = isUnderSkippedDir(root, filePath) || isGenericBinaryAsset(filePath);
       const buffer = fs.readFileSync(filePath);
       for (const real of realValues) {
         const hit = boundaryOnly ? bufferContainsValueAtBoundary(buffer, real) : bufferContainsValue(buffer, real);
@@ -421,6 +437,7 @@ function residualCheck(root, realValues) {
       }
       return;
     }
+    const boundaryOnly = isUnderSkippedDir(root, filePath);
     const text = fs.readFileSync(filePath, 'utf8');
     for (const real of realValues) {
       const hit = boundaryOnly ? containsMatchAtBoundary(text, real) : containsMatch(text, real);
