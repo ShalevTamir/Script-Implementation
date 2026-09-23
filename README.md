@@ -116,12 +116,16 @@ on; `<inputPath>` is read-only throughout):
 3. Delete any line matching a `linesToRemove` glob pattern.
 4. Rename files/directories whose name contains a mapping entry, deepest
    path first.
-5. Substitute matching text in every non-binary file (binary detected by
-   sniffing for a NUL byte, not a fixed extension list) — one pass covers
+5. Substitute matching text in every non-binary file — one pass covers
    identifiers, comments, string literals, JSON keys/values, XML attributes,
    markdown, anything, since it's all just text. Binary files (DLLs,
    already-bundled output) are left untouched here - rewriting bytes inside
-   a compiled binary isn't safe.
+   a compiled binary isn't safe. Binary is detected by sniffing for a NUL
+   byte in the first 8KB, *except* known generic asset extensions (images,
+   fonts, archives, media - the same list the residual check treats as
+   high-entropy noise), which are always treated as binary regardless of
+   that sniff - a small font/image can have no NUL byte at all within the
+   sniff window, and misreading it as text here would corrupt it on write-back.
 6. Re-scan the output for any real value that's still present and fail
    loudly if so — nothing should be pushed if this gate fails. Checks both a
    file/directory's own name and its contents - renaming already happens in
