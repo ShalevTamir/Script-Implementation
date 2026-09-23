@@ -295,9 +295,19 @@ function renamePaths(root, pairs) {
 // Content substitution
 // ---------------------------------------------------------------------------
 
+// package.json/package-lock.json are left untouched by content substitution:
+// rewriting a dependency name doesn't re-resolve or re-hash it, so a
+// substituted lockfile can end up with a mock name pointing at a resolved
+// URL/integrity hash still tied to the real package - broken, not just
+// different. They're still scanned by residualCheck like any other file,
+// so a real value left in them surfaces as a normal gate failure instead of
+// being silently (and incorrectly) rewritten.
+const CONTENT_SUBSTITUTION_SKIP_FILENAMES = new Set(['package.json', 'package-lock.json']);
+
 function substituteFileContents(root, pairs) {
   walkFiles(root, (filePath) => {
     if (isBinaryFile(filePath)) return;
+    if (CONTENT_SUBSTITUTION_SKIP_FILENAMES.has(path.basename(filePath))) return;
     const original = fs.readFileSync(filePath, 'utf8');
     const updated = applySubstitution(original, pairs);
     if (updated !== original) fs.writeFileSync(filePath, updated, 'utf8');

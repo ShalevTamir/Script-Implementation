@@ -12,7 +12,9 @@
   "exclusions": [
     "MockDotnetLibrary/src/internal-only",
     "MockDotnetLibrary/src/internal-only.cs",
-    "MockDotnetApi/src/InternalTools"
+    "MockDotnetApi/src/InternalTools",
+    "MockNodeLibrary/package.json",
+    "MockNestApi/package.json"
   ],
   "linesToRemove": ["*classified debug note*"]
 }
