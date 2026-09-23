@@ -126,6 +126,16 @@ on; `<inputPath>` is read-only throughout):
    high-entropy noise), which are always treated as binary regardless of
    that sniff - a small font/image can have no NUL byte at all within the
    sniff window, and misreading it as text here would corrupt it on write-back.
+
+   `package.json` and `package-lock.json` are exempt from this step (their
+   content is left exactly as copied) - a lockfile's `resolved` URLs and
+   `integrity` hashes are computed against the *real* package name/tarball,
+   so text-substituting a dependency name in place doesn't re-resolve or
+   re-hash anything; it just produces a lockfile that looks renamed but is
+   actually broken. If a project's `package.json` legitimately needs a
+   dependency name renamed (e.g. it depends on another exported project),
+   list that `package.json` in `exclusions` instead, same as any other
+   must-not-ship-as-is file - see the pilots table below.
 6. Re-scan the output for any real value that's still present and fail
    loudly if so — nothing should be pushed if this gate fails. Checks both a
    file/directory's own name and its contents - renaming already happens in
@@ -190,10 +200,10 @@ reference shape the real pipeline needs to handle, sharing one
 Each contains a `Falcon`/`FalconLabel`/`Falconry` fixture demonstrating plain
 substring matching: all three get sanitized (`Falconry` → `Heronry` too, since
 there's no word-boundary check). Exporting each repo independently still
-produces mutually consistent renames across the API↔library pairs (e.g. `MockDotnetApi`'s `PackageReference` and `using`
-both become `OpenDotnetLibrary`; `MockNestApi`'s `package.json` dependency
-key/path and `import` both become `open-node-library`), because both sides
-read the same shared mapping table.
+produces mutually consistent renames across the API↔library pairs (e.g.
+`MockDotnetApi`'s `PackageReference` and `using` both become
+`OpenDotnetLibrary`; `MockNestApi`'s `import` becomes `open-node-library`),
+because both sides read the same shared mapping table.
 
 `MockDotnetLibrary` additionally has `src/internal-only/live-secrets.txt`
 and `src/internal-only.cs`, exercising the mapping table's `exclusions` list
@@ -204,3 +214,10 @@ and an excluded `src/InternalTools/InternalTools.csproj`, exercising the
 solution-reference cleanup: after export, the `.sln` still parses and
 contains only the `OpenDotnetApi` project - no leftover `InternalTools`
 `Project` block or orphaned GUID lines.
+
+`MockNodeLibrary` and `MockNestApi`'s `package.json` are both listed in
+`exclusions` - their real dependency name/values (`mock-node-library`,
+`MockNodeLibrary`, `mock-nest-api`) would otherwise fail the residual check,
+since `package.json`/`package-lock.json` content is never substituted (see
+step 5 above); a real project depending on a renamed one needs its own
+`package.json` handled the same way.
