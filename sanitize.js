@@ -271,6 +271,16 @@ function assertDistinctPaths(inputRoot, outputRoot) {
   }
 }
 
+// Prints any residual-check findings and returns whether the check passed.
+function reportResidualFindings(failureHeader, findings) {
+  if (findings.length === 0) return true;
+  console.error(failureHeader);
+  for (const { file, value } of findings) {
+    console.error(`[GATE FAIL] residual real value '${value}' found in ${file}`);
+  }
+  return false;
+}
+
 function runExport(inputRoot, outputRoot) {
   assertDistinctPaths(inputRoot, outputRoot);
   const mapping = loadMappingTable(DEFAULT_MAPPING_TABLE_PATH);
@@ -291,16 +301,31 @@ function runExport(inputRoot, outputRoot) {
   substituteFileContents(projectRoot, exportPairs);
 
   const findings = residualCheck(projectRoot, mapping.realValues());
-  if (findings.length > 0) {
-    console.error('EXPORT FAILED - residual sensitive values found. Nothing should be pushed.');
-    for (const { file, value } of findings) {
-      console.error(`[GATE FAIL] residual real value '${value}' found in ${file}`);
-    }
+  const passed = reportResidualFindings(
+    'EXPORT FAILED - residual sensitive values found. Nothing should be pushed.',
+    findings
+  );
+  if (!passed) {
     process.exitCode = 1;
     return;
   }
 
   console.log(`EXPORT PASSED. Sanitized tree at: ${projectRoot}`);
+}
+
+// Runs only the residual check against an already-existing path - no copy,
+// no substitution, no other passes. Useful for re-checking an export output
+// (or any other tree) later without redoing the whole export.
+function runVerify(targetPath) {
+  const mapping = loadMappingTable(DEFAULT_MAPPING_TABLE_PATH);
+  const findings = residualCheck(targetPath, mapping.realValues());
+  const passed = reportResidualFindings('VERIFY FAILED - residual sensitive values found.', findings);
+  if (!passed) {
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log(`VERIFY PASSED. No residual real values found under: ${targetPath}`);
 }
 
 function runImport(inputRoot, outputRoot) {
@@ -322,10 +347,21 @@ function runImport(inputRoot, outputRoot) {
 // CLI entry point
 // ---------------------------------------------------------------------------
 
-const USAGE = 'Usage: sanitize export <inputPath> <outputPath> | sanitize import <inputPath> <outputPath>';
+const USAGE =
+  'Usage: sanitize export <inputPath> <outputPath> | sanitize import <inputPath> <outputPath> | sanitize verify <path>';
 
 function main(argv) {
   const [command, inputArg, outputArg] = argv;
+
+  if (command === 'verify') {
+    if (!inputArg) {
+      console.log(USAGE);
+      process.exitCode = 1;
+      return;
+    }
+    runVerify(path.resolve(inputArg));
+    return;
+  }
 
   if ((command !== 'export' && command !== 'import') || !inputArg || !outputArg) {
     console.log(USAGE);
