@@ -154,13 +154,19 @@ on; `<inputPath>` is read-only throughout):
    substring, since that's where the distinctive-naming assumption actually
    holds.
 
-   The same word-boundary treatment also applies to any binary file with a
-   generic asset extension (`.png`, `.jpg`, `.gif`, `.ico`, `.webp`,
-   `.woff`/`.woff2`/`.ttf`/`.otf`/`.eot`, `.pdf`, `.zip`/`.gz`/`.7z`,
-   `.mp3`/`.mp4`/`.wav`/`.mov`/`.avi`/`.ogg`/`.flac`), regardless of which
-   directory it's in - compressed image/font/media bytes are high-entropy
-   noise a short real value can coincidentally turn up in, same risk as
-   generated build output, just not confined to a skipped-dir path.
+   Any binary file with a generic asset extension (`.png`, `.jpg`, `.gif`,
+   `.ico`, `.webp`, `.woff`/`.woff2`/`.ttf`/`.otf`/`.eot`, `.pdf`,
+   `.zip`/`.gz`/`.7z`, `.mp3`/`.mp4`/`.wav`/`.mov`/`.avi`/`.ogg`/`.flac`) is
+   excluded from **content** scanning entirely, regardless of which
+   directory it's in - even a word-boundary match is unreliable there, since
+   compressed image/font/media bytes are high-entropy noise where most
+   random bytes already look like a boundary, so a short real value has a
+   real chance of turning up purely by chance. These extensions are always
+   treated as binary here too (never text), independent of the NUL-byte
+   sniff, so a small asset with no NUL byte in it can't be misread as text
+   and corrupted on write-back during substitution (step 5). File/directory
+   *names* are still checked normally either way - that's ordinary
+   human-authored text, not noise.
 
 **Import** (additive only, never deletes pre-existing content at
 `<outputPath>`):
