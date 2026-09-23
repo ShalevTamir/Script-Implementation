@@ -20,12 +20,12 @@ git repository so the two approaches can be compared independently.
 ## Usage
 
 No per-project config, no `cd`-ing into anything — every project needs is
-just its source files. Each command takes exactly two required positional
-args, input then output:
+just its source files.
 
 ```bash
 node sanitize.js export <inputPath> <outputPath>
 node sanitize.js import <inputPath> <outputPath>
+node sanitize.js verify <path>
 ```
 
 e.g.
@@ -33,11 +33,17 @@ e.g.
 ```bash
 node sanitize.js export pilots/MockDotnetLibrary /tmp/scratch-export
 node sanitize.js import /path/to/public-checkout pilots/MockDotnetLibrary
+node sanitize.js verify /tmp/scratch-export/OpenDotnetLibrary
 ```
 
 For import, `<outputPath>` is normally the internal project itself (an
 in-place import, reconstructing real values back into your working copy).
-`<inputPath>` is only ever read, never written to, for both commands.
+`<inputPath>` is only ever read, never written to, for export/import.
+
+`verify` runs only the residual check (step 6 below) against an
+already-existing path — no copy, no substitution, no other pass. Useful for
+re-checking an export's output later (e.g. after a separate CI build step
+regenerates `bin`/`dist`) without redoing the whole export.
 
 ### Mapping table
 
