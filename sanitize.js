@@ -20,11 +20,12 @@
 const fs = require('fs');
 const path = require('path');
 
-// obj/ and node_modules/ are pure intermediate/third-party noise, never
-// what actually ships. bin/ and dist/ are NOT skipped - that's where final
-// compiled DLLs and bundled JS live, and residualCheck needs those copied
-// into the export output to be able to scan them.
-const SKIP_DIR_NAMES = new Set(['.git', 'node_modules', 'obj']);
+// Build artifacts/intermediates never belong in exported source - skipped
+// during copy so the exported tree only ever contains source. This does NOT
+// stop them being checked for leaked real values: `verify <path>` runs the
+// same residual check directly against wherever bin/obj/dist actually live
+// (e.g. after rebuilding from the exported source), independent of export.
+const SKIP_DIR_NAMES = new Set(['.git', 'node_modules', 'obj', 'bin', 'dist']);
 
 const DEFAULT_MAPPING_TABLE_PATH =
   process.env.SANITIZER_MAPPING_TABLE || path.join(__dirname, 'MappingTable', 'mapping.json');
