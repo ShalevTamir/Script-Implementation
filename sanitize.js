@@ -20,7 +20,11 @@
 const fs = require('fs');
 const path = require('path');
 
-const SKIP_DIR_NAMES = new Set(['.git', 'node_modules', 'bin', 'obj', 'dist']);
+// obj/ and node_modules/ are pure intermediate/third-party noise, never
+// what actually ships. bin/ and dist/ are NOT skipped - that's where final
+// compiled DLLs and bundled JS live, and residualCheck needs those copied
+// into the export output to be able to scan them.
+const SKIP_DIR_NAMES = new Set(['.git', 'node_modules', 'obj']);
 
 const DEFAULT_MAPPING_TABLE_PATH =
   process.env.SANITIZER_MAPPING_TABLE || path.join(__dirname, 'MappingTable', 'mapping.json');
@@ -225,12 +229,30 @@ function removeMatchingLines(root, patterns) {
 
 // ---------------------------------------------------------------------------
 // Residual check gate (export only)
+//
+// Binary files (compiled DLLs, bundled/minified output that still sniffs as
+// binary) aren't decoded as text - instead their raw bytes are searched for
+// each real value in both UTF-8 and UTF-16LE, since compiled .NET assemblies
+// store type/method/string-literal names UTF-16LE-encoded in their metadata.
+// This only checks; it never rewrites binaries (unsafe - metadata heap
+// offsets would corrupt), so a hit here means "rebuild from sanitized
+// source," not something the script can fix in place.
 // ---------------------------------------------------------------------------
+
+function bufferContainsValue(buffer, value) {
+  return buffer.includes(value, 0, 'utf8') || buffer.includes(value, 0, 'utf16le');
+}
 
 function residualCheck(root, realValues) {
   const findings = [];
   walkFiles(root, (filePath) => {
-    if (isBinaryFile(filePath)) return;
+    if (isBinaryFile(filePath)) {
+      const buffer = fs.readFileSync(filePath);
+      for (const real of realValues) {
+        if (bufferContainsValue(buffer, real)) findings.push({ file: filePath, value: real });
+      }
+      return;
+    }
     const text = fs.readFileSync(filePath, 'utf8');
     for (const real of realValues) {
       if (containsMatch(text, real)) findings.push({ file: filePath, value: real });
