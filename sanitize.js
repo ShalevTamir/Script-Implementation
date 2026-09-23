@@ -311,25 +311,94 @@ function removeMatchingLines(root, patterns) {
 // This only checks; it never rewrites binaries (unsafe - metadata heap
 // offsets would corrupt), so a hit here means "rebuild from sanitized
 // source," not something the script can fix in place.
+//
+// Files under a skipped-dir name (bin/obj/dist/.vs/node_modules/.git) are
+// never part of what export actually copies - if verify is pointed straight
+// at one (e.g. a freshly rebuilt bin/ next to the exported source), it's
+// auto-generated/third-party content full of generic runtime/BCL text a
+// short real value can coincidentally sit inside as a substring without
+// anything having actually leaked. Only there, matching requires a real
+// word boundary; everywhere else stays plain substring, since this org's
+// own source doesn't have that generic-text collision risk.
 // ---------------------------------------------------------------------------
+
+function isWordChar(codeUnit) {
+  return (
+    (codeUnit >= 48 && codeUnit <= 57) || // 0-9
+    (codeUnit >= 65 && codeUnit <= 90) || // A-Z
+    (codeUnit >= 97 && codeUnit <= 122) || // a-z
+    codeUnit === 95 // _
+  );
+}
+
+function isUnderSkippedDir(root, filePath) {
+  if (SKIP_DIR_NAMES.has(path.basename(root))) return true;
+  return path.relative(root, filePath).split(path.sep).some((segment) => SKIP_DIR_NAMES.has(segment));
+}
+
+function containsMatchAtBoundary(text, needle) {
+  let fromIndex = 0;
+  for (;;) {
+    const index = text.indexOf(needle, fromIndex);
+    if (index === -1) return false;
+    const before = index > 0 ? text.charCodeAt(index - 1) : -1;
+    const after = index + needle.length < text.length ? text.charCodeAt(index + needle.length) : -1;
+    if (!isWordChar(before) && !isWordChar(after)) return true;
+    fromIndex = index + 1;
+  }
+}
 
 function bufferContainsValue(buffer, value) {
   return buffer.includes(value, 0, 'utf8') || buffer.includes(value, 0, 'utf16le');
 }
 
+// unitSize is the byte width of one character in the given encoding (1 for
+// UTF-8 ASCII, 2 for UTF-16LE), used to step back/forward one code unit to
+// inspect the byte(s) just outside the match.
+function bufferIndexOfAtBoundary(buffer, needle, unitSize) {
+  if (needle.length === 0) return false;
+  let fromIndex = 0;
+  for (;;) {
+    const index = buffer.indexOf(needle, fromIndex);
+    if (index === -1) return false;
+
+    const before = index - unitSize >= 0 ? (unitSize === 1 ? buffer[index - 1] : buffer.readUInt16LE(index - 2)) : -1;
+    const afterOffset = index + needle.length;
+    const after =
+      afterOffset + unitSize <= buffer.length
+        ? unitSize === 1
+          ? buffer[afterOffset]
+          : buffer.readUInt16LE(afterOffset)
+        : -1;
+
+    if (!isWordChar(before) && !isWordChar(after)) return true;
+    fromIndex = index + 1;
+  }
+}
+
+function bufferContainsValueAtBoundary(buffer, value) {
+  return (
+    bufferIndexOfAtBoundary(buffer, Buffer.from(value, 'utf8'), 1) ||
+    bufferIndexOfAtBoundary(buffer, Buffer.from(value, 'utf16le'), 2)
+  );
+}
+
 function residualCheck(root, realValues) {
   const findings = [];
   walkFiles(root, (filePath) => {
+    const boundaryOnly = isUnderSkippedDir(root, filePath);
     if (isBinaryFile(filePath)) {
       const buffer = fs.readFileSync(filePath);
       for (const real of realValues) {
-        if (bufferContainsValue(buffer, real)) findings.push({ file: filePath, value: real });
+        const hit = boundaryOnly ? bufferContainsValueAtBoundary(buffer, real) : bufferContainsValue(buffer, real);
+        if (hit) findings.push({ file: filePath, value: real });
       }
       return;
     }
     const text = fs.readFileSync(filePath, 'utf8');
     for (const real of realValues) {
-      if (containsMatch(text, real)) findings.push({ file: filePath, value: real });
+      const hit = boundaryOnly ? containsMatchAtBoundary(text, real) : containsMatch(text, real);
+      if (hit) findings.push({ file: filePath, value: real });
     }
   });
   return findings;
