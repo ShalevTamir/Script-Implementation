@@ -108,7 +108,11 @@ on; `<inputPath>` is read-only throughout):
    final compiled DLLs and bundled JS live and step 6 needs them present to
    check) — `<outputPath>` is a container, so multiple projects can be
    exported into the same one without clobbering each other.
-2. Strip excluded paths.
+2. Strip excluded paths. If an excluded path is (or contains) a `.csproj`,
+   any `.sln` file in the tree also has that project's `Project(...) ...
+   EndProject` block removed, along with every `GlobalSection` line keyed by
+   that project's GUID - otherwise the solution would still reference a
+   project file that no longer exists.
 3. Delete any line matching a `linesToRemove` glob pattern.
 4. Rename files/directories whose name contains a mapping entry, deepest
    path first.
@@ -157,3 +161,9 @@ read the same shared mapping table.
 `MockDotnetLibrary` additionally has `src/internal-only/live-secrets.txt`
 and `src/internal-only.cs`, exercising the mapping table's `exclusions` list
 — both must never appear in export output.
+
+`MockDotnetApi` additionally has `MockDotnetApi.sln` referencing both itself
+and an excluded `src/InternalTools/InternalTools.csproj`, exercising the
+solution-reference cleanup: after export, the `.sln` still parses and
+contains only the `OpenDotnetApi` project - no leftover `InternalTools`
+`Project` block or orphaned GUID lines.

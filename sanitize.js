@@ -175,6 +175,61 @@ function stripExcludedEntries(projectRoot, relativePaths) {
 }
 
 // ---------------------------------------------------------------------------
+// .sln reference cleanup - an excluded .csproj (or a directory holding one)
+// leaves its solution file pointing at a path that no longer exists: a
+// `Project(...) ... EndProject` block plus matching GUID-keyed lines in the
+// Global sections. Basenames are collected before stripExcludedEntries
+// deletes the files, then matched against each Project block's quoted path
+// (basename only, since the .sln path separator may not match the host OS).
+// ---------------------------------------------------------------------------
+
+function collectExcludedCsprojBasenames(projectRoot, relativePaths) {
+  const basenames = new Set();
+  for (const relativePath of relativePaths) {
+    const fullPath = path.join(projectRoot, relativePath);
+    if (!fs.existsSync(fullPath)) continue;
+    if (fs.statSync(fullPath).isDirectory()) {
+      walkFiles(fullPath, (filePath) => {
+        if (filePath.endsWith('.csproj')) basenames.add(path.basename(filePath));
+      });
+    } else if (fullPath.endsWith('.csproj')) {
+      basenames.add(path.basename(fullPath));
+    }
+  }
+  return basenames;
+}
+
+const SLN_PROJECT_BLOCK_PATTERN =
+  /^Project\("\{[0-9A-Fa-f-]+\}"\)\s*=\s*"[^"]*",\s*"([^"]*)",\s*"(\{[0-9A-Fa-f-]+\})"\r?\n[\s\S]*?^EndProject\r?\n/gm;
+
+function stripSolutionProjectReferences(slnText, csprojBasenames) {
+  const removedGuids = [];
+  const withoutBlocks = slnText.replace(SLN_PROJECT_BLOCK_PATTERN, (block, projectPath, guid) => {
+    const basename = projectPath.split(/[\\/]/).pop();
+    if (!csprojBasenames.has(basename)) return block;
+    removedGuids.push(guid);
+    return '';
+  });
+  if (removedGuids.length === 0) return slnText;
+
+  // Global-section lines (ProjectConfigurationPlatforms, NestedProjects, ...)
+  // reference a project by its GUID, one per line - no block structure to
+  // parse, just drop any line mentioning a GUID whose Project block was removed.
+  const keptLines = withoutBlocks.split('\n').filter((line) => !removedGuids.some((guid) => line.includes(guid)));
+  return keptLines.join('\n');
+}
+
+function cleanSolutionReferences(projectRoot, csprojBasenames) {
+  if (csprojBasenames.size === 0) return;
+  walkFiles(projectRoot, (filePath) => {
+    if (!filePath.endsWith('.sln')) return;
+    const original = fs.readFileSync(filePath, 'utf8');
+    const updated = stripSolutionProjectReferences(original, csprojBasenames);
+    if (updated !== original) fs.writeFileSync(filePath, updated, 'utf8');
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Path renaming - deepest path first, so renaming a directory never
 // invalidates a deeper path already queued up in the same pass.
 // ---------------------------------------------------------------------------
@@ -313,7 +368,12 @@ function runExport(inputRoot, outputRoot) {
   const projectRoot = path.join(outputRoot, applySubstitution(path.basename(inputRoot), exportPairs));
   fs.rmSync(projectRoot, { recursive: true, force: true, ...FS_RETRY });
   copyRecursive(inputRoot, projectRoot);
-  stripExcludedEntries(projectRoot, mapping.excludedPathsFor(path.basename(inputRoot)));
+
+  const excludedRelativePaths = mapping.excludedPathsFor(path.basename(inputRoot));
+  const excludedCsprojBasenames = collectExcludedCsprojBasenames(projectRoot, excludedRelativePaths);
+  stripExcludedEntries(projectRoot, excludedRelativePaths);
+  cleanSolutionReferences(projectRoot, excludedCsprojBasenames);
+
   removeMatchingLines(projectRoot, mapping.lineRemovalPatterns());
   renamePaths(projectRoot, exportPairs);
   substituteFileContents(projectRoot, exportPairs);
