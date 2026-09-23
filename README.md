@@ -123,9 +123,13 @@ on; `<inputPath>` is read-only throughout):
    already-bundled output) are left untouched here - rewriting bytes inside
    a compiled binary isn't safe.
 6. Re-scan the output for any real value that's still present and fail
-   loudly if so — nothing should be pushed if this gate fails. Binary files
-   are checked too, by searching their raw bytes for each real value
-   UTF-8- and UTF-16LE-encoded (compiled .NET assemblies store
+   loudly if so — nothing should be pushed if this gate fails. Checks both a
+   file/directory's own name and its contents - renaming already happens in
+   step 4, but the gate re-checks names independently rather than trusting
+   that pass (`verify` in particular may run standalone against a tree that
+   was never renamed). Binary files are checked too, by searching their raw
+   bytes for each real value UTF-8- and UTF-16LE-encoded (compiled .NET
+   assemblies store
    type/method/string names UTF-16LE in their metadata), so a leak baked
    into a DLL still fails the gate even though it wasn't (and can't safely
    be) rewritten in step 5 - the fix is rebuilding from sanitized source,
