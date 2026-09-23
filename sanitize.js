@@ -340,11 +340,13 @@ function removeMatchingLines(root, patterns) {
 // word boundary; everywhere else stays plain substring, since this org's
 // own source doesn't have that generic-text collision risk.
 //
-// The same coincidental-byte-match risk applies to any generic binary asset
-// (images, fonts, archives, media) regardless of which directory it's in -
-// e.g. a .png's compressed pixel data is effectively high-entropy noise, so
-// a short real value's byte sequence can turn up in it purely by chance.
-// These get the word-boundary treatment by extension, independent of path.
+// Generic binary assets (images, fonts, archives, media) are excluded from
+// content scanning entirely, regardless of which directory they're in - a
+// .png's compressed pixel data is high-entropy noise, and even a
+// word-boundary match is unreliable for a short value there, since most
+// random bytes already look like "not a word character" on either side.
+// File/directory names are still checked for these (that's ordinary
+// human-authored text, not noise).
 // ---------------------------------------------------------------------------
 
 const GENERIC_BINARY_ASSET_EXTENSIONS = new Set([
@@ -435,7 +437,14 @@ function residualCheck(root, realValues) {
 
   walkFiles(root, (filePath) => {
     if (isBinaryFile(filePath)) {
-      const boundaryOnly = isUnderSkippedDir(root, filePath) || isGenericBinaryAsset(filePath);
+      // Generic binary assets (images, fonts, archives, media) are pure
+      // high-entropy noise - even a word-boundary match is unreliable for a
+      // short value, since most random bytes already look like a boundary.
+      // Excluded from content scanning entirely, the same way bin/obj/dist
+      // are excluded from export's copy - names are still checked above.
+      if (isGenericBinaryAsset(filePath)) return;
+
+      const boundaryOnly = isUnderSkippedDir(root, filePath);
       const buffer = fs.readFileSync(filePath);
       for (const real of realValues) {
         const hit = boundaryOnly ? bufferContainsValueAtBoundary(buffer, real) : bufferContainsValue(buffer, real);
