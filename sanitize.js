@@ -124,6 +124,12 @@ function containsMatch(text, needle) {
 // ---------------------------------------------------------------------------
 
 function isBinaryFile(filePath) {
+  // Known binary asset formats are trusted by extension rather than the NUL
+  // sniff below: a small font/image can have no NUL byte within the first
+  // BINARY_SNIFF_BYTES, which would otherwise misclassify it as text - and
+  // then get corrupted by a UTF-8 read + write-back in substituteFileContents.
+  if (isGenericBinaryAsset(filePath)) return true;
+
   const fd = fs.openSync(filePath, 'r');
   try {
     const buffer = Buffer.alloc(BINARY_SNIFF_BYTES);
