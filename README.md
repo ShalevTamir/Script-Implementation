@@ -134,6 +134,17 @@ on; `<inputPath>` is read-only throughout):
    `<inputPath>` — rebuild from the sanitized source and run `verify
    <path-to-bin-or-dist>` separately to check the actual shipped artifacts.
 
+   Matching is plain substring everywhere **except** inside a path with a
+   skipped-dir name (`bin`, `obj`, `dist`, `.vs`, `node_modules`, `.git`) -
+   those are never part of what export actually copies, so encountering one
+   during `verify` means auto-generated or third-party content full of
+   generic runtime/BCL text, where a short real value can coincidentally sit
+   inside some unrelated longer word without anything having leaked. There,
+   a hit only counts at a real word boundary (not preceded/followed by
+   `[A-Za-z0-9_]`). Everywhere else - your own source - stays plain
+   substring, since that's where the distinctive-naming assumption actually
+   holds.
+
 **Import** (additive only, never deletes pre-existing content at
 `<outputPath>`):
 1. Copy `<inputPath>` onto `<outputPath>` as an overlay.
