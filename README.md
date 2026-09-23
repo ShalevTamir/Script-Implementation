@@ -17,6 +17,11 @@ git repository so the two approaches can be compared independently.
 - Node **22.17.x** only (`.nvmrc` provided — `nvm use`). No `npm install`
   needed: `sanitize.js` has zero runtime dependencies.
 
+Delete/move/copy operations retry with backoff (up to 5 attempts) on
+`EBUSY`/`EPERM`/`ENOTEMPTY`/`EMFILE`/`ENFILE` — transient Windows file-lock
+errors from antivirus/indexers briefly holding a handle on a file that isn't
+actually in use. Any other error still fails immediately.
+
 ## Usage
 
 No per-project config, no `cd`-ing into anything — every project needs is

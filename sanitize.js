@@ -29,6 +29,24 @@ const SKIP_DIR_NAMES = new Set(['.git', 'node_modules', 'obj']);
 const DEFAULT_MAPPING_TABLE_PATH =
   process.env.SANITIZER_MAPPING_TABLE || path.join(__dirname, 'MappingTable', 'mapping.json');
 
+// Windows transient-lock tolerance: antivirus/indexer can hold a brief
+// handle on a file that's about to move/delete, failing with EBUSY/EPERM/
+// ENOTEMPTY even though the file isn't really locked (deleting it by hand a
+// moment later works fine). Retry with backoff instead of failing outright.
+const RETRYABLE_FS_ERROR_CODES = new Set(['EBUSY', 'EPERM', 'ENOTEMPTY', 'EMFILE', 'ENFILE']);
+const FS_RETRY = { maxRetries: 5, retryDelay: 100 };
+
+function retryOnTransientLock(fn) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return fn();
+    } catch (err) {
+      if (!RETRYABLE_FS_ERROR_CODES.has(err.code) || attempt >= FS_RETRY.maxRetries) throw err;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, FS_RETRY.retryDelay * (attempt + 1));
+    }
+  }
+}
+
 const BINARY_SNIFF_BYTES = 8192;
 
 // ---------------------------------------------------------------------------
@@ -129,7 +147,7 @@ function copyRecursive(src, dest) {
     }
   } else {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.copyFileSync(src, dest);
+    retryOnTransientLock(() => fs.copyFileSync(src, dest));
   }
 }
 
@@ -152,7 +170,7 @@ function walkFiles(root, callback) {
 
 function stripExcludedEntries(projectRoot, relativePaths) {
   for (const relativePath of relativePaths) {
-    fs.rmSync(path.join(projectRoot, relativePath), { recursive: true, force: true });
+    fs.rmSync(path.join(projectRoot, relativePath), { recursive: true, force: true, ...FS_RETRY });
   }
 }
 
@@ -179,9 +197,9 @@ function moveWithMerge(source, dest) {
     for (const entry of fs.readdirSync(source)) {
       moveWithMerge(path.join(source, entry), path.join(dest, entry));
     }
-    fs.rmdirSync(source);
+    retryOnTransientLock(() => fs.rmdirSync(source));
   } else {
-    fs.renameSync(source, dest);
+    retryOnTransientLock(() => fs.renameSync(source, dest));
   }
 }
 
@@ -293,7 +311,7 @@ function runExport(inputRoot, outputRoot) {
   // container, so it exactly mirrors inputRoot with nothing stale from a
   // prior run. inputRoot is only ever read from here on.
   const projectRoot = path.join(outputRoot, applySubstitution(path.basename(inputRoot), exportPairs));
-  fs.rmSync(projectRoot, { recursive: true, force: true });
+  fs.rmSync(projectRoot, { recursive: true, force: true, ...FS_RETRY });
   copyRecursive(inputRoot, projectRoot);
   stripExcludedEntries(projectRoot, mapping.excludedPathsFor(path.basename(inputRoot)));
   removeMatchingLines(projectRoot, mapping.lineRemovalPatterns());
