@@ -93,9 +93,10 @@ being replaced first.
 exactly mirrors `<inputPath>`, then only touches that subfolder from there
 on; `<inputPath>` is read-only throughout):
 1. Copy `<inputPath>` into `<outputPath>/<sanitizedProjectName>` (skipping
-   `.git`, `node_modules`, `bin`, `obj`, `dist`) — `<outputPath>` is a
-   container, so multiple projects can be exported into the same one without
-   clobbering each other.
+   `.git`, `node_modules`, `obj` — but not `bin`/`dist`, since that's where
+   final compiled DLLs and bundled JS live and step 6 needs them present to
+   check) — `<outputPath>` is a container, so multiple projects can be
+   exported into the same one without clobbering each other.
 2. Strip excluded paths.
 3. Delete any line matching a `linesToRemove` glob pattern.
 4. Rename files/directories whose name contains a mapping entry, deepest
@@ -103,9 +104,17 @@ on; `<inputPath>` is read-only throughout):
 5. Substitute matching text in every non-binary file (binary detected by
    sniffing for a NUL byte, not a fixed extension list) — one pass covers
    identifiers, comments, string literals, JSON keys/values, XML attributes,
-   markdown, anything, since it's all just text.
+   markdown, anything, since it's all just text. Binary files (DLLs,
+   already-bundled output) are left untouched here - rewriting bytes inside
+   a compiled binary isn't safe.
 6. Re-scan the output for any real value that's still present and fail
-   loudly if so — nothing should be pushed if this gate fails.
+   loudly if so — nothing should be pushed if this gate fails. Binary files
+   are checked too, by searching their raw bytes for each real value
+   UTF-8- and UTF-16LE-encoded (compiled .NET assemblies store
+   type/method/string names UTF-16LE in their metadata), so a leak baked
+   into a DLL still fails the gate even though it wasn't (and can't safely
+   be) rewritten in step 5 - the fix is rebuilding from sanitized source,
+   not patching the binary.
 
 **Import** (additive only, never deletes pre-existing content at
 `<outputPath>`):
