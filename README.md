@@ -104,8 +104,8 @@ being replaced first.
 exactly mirrors `<inputPath>`, then only touches that subfolder from there
 on; `<inputPath>` is read-only throughout):
 1. Copy `<inputPath>` into `<outputPath>/<sanitizedProjectName>` (skipping
-   `.git`, `node_modules`, `obj`, `bin`, `dist`, `.vs` — build
-   artifacts/intermediates and local IDE state never belong in exported
+   `.git`, `node_modules`, `obj`, `bin`, `dist`, `.vs`, `.angular` — build
+   artifacts/intermediates and local IDE/CLI cache never belong in exported
    source) — `<outputPath>` is a container, so multiple projects can be
    exported into the same one without clobbering each other.
 2. Strip excluded paths. If an excluded path is (or contains) a `.csproj`,
@@ -139,7 +139,8 @@ on; `<inputPath>` is read-only throughout):
    <path-to-bin-or-dist>` separately to check the actual shipped artifacts.
 
    Matching is plain substring everywhere **except** inside a path with a
-   skipped-dir name (`bin`, `obj`, `dist`, `.vs`, `node_modules`, `.git`) -
+   skipped-dir name (`bin`, `obj`, `dist`, `.vs`, `.angular`, `node_modules`,
+   `.git`) -
    those are never part of what export actually copies, so encountering one
    during `verify` means auto-generated or third-party content full of
    generic runtime/BCL text, where a short real value can coincidentally sit
