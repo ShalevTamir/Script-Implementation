@@ -317,15 +317,16 @@ function renamePaths(root, pairs, protectedTokens) {
 // rewriting a dependency name doesn't re-resolve or re-hash it, so a
 // substituted lockfile can end up with a mock name pointing at a resolved
 // URL/integrity hash still tied to the real package - broken, not just
-// different. They're still scanned by residualCheck like any other file,
-// so a real value left in them surfaces as a normal gate failure instead of
-// being silently (and incorrectly) rewritten.
-const CONTENT_SUBSTITUTION_SKIP_FILENAMES = new Set(['package.json', 'package-lock.json']);
+// different. Since the content is never rewritten, residualCheck also
+// exempts these filenames from gate failures (see residualCheck below) -
+// otherwise every project whose package.json legitimately still contains a
+// real value (e.g. depending on a renamed sibling) would always fail.
+const PACKAGE_LOCKFILE_FILENAMES = new Set(['package.json', 'package-lock.json']);
 
 function substituteFileContents(root, pairs, protectedTokens) {
   walkFiles(root, (filePath) => {
     if (isBinaryFile(filePath)) return;
-    if (CONTENT_SUBSTITUTION_SKIP_FILENAMES.has(path.basename(filePath))) return;
+    if (PACKAGE_LOCKFILE_FILENAMES.has(path.basename(filePath))) return;
     const original = fs.readFileSync(filePath, 'utf8');
     const { hidden, restore } = hideProtectedTokens(original, protectedTokens);
     const updated = restore(applySubstitution(hidden, pairs));
@@ -450,6 +451,12 @@ function residualCheck(root, realValues, protectedTokens) {
   });
 
   walkFiles(root, (filePath) => {
+    // package.json/package-lock.json content is never rewritten (see
+    // PACKAGE_LOCKFILE_FILENAMES above), so it can legitimately still
+    // contain a real value - e.g. a project depending on a renamed sibling.
+    // Exempt from content scanning entirely rather than always failing.
+    if (PACKAGE_LOCKFILE_FILENAMES.has(path.basename(filePath))) return;
+
     if (isBinaryFile(filePath)) {
       // Generic binary assets (images, fonts, archives, media) are pure
       // high-entropy noise - even a word-boundary match is unreliable for a
