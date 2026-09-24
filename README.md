@@ -113,6 +113,18 @@ boundaries. Entries are applied longest-value-first so a longer match (e.g.
 `TelemetryVaultLib`) isn't partially clobbered by a shorter one (`Telemetry`)
 being replaced first.
 
+**Exception: integers and IPv4 addresses.** A mapping value that's just
+digits (e.g. a port, `5432`) or shaped like an IPv4 address (e.g.
+`10.20.30.40`) is matched at a real word boundary instead of as a plain
+substring, automatically — no config needed, it's inferred from the value's
+own shape. Distinctive proprietary names essentially never collide with
+unrelated text, but short numeric/IP-shaped values constantly do: `5432` is
+also a substring of `15432` and `2025432`, and `10.20.30.40` is a substring
+of `10.20.30.400`. Plain substring replace would corrupt those unrelated
+values; boundary matching only touches an exact standalone occurrence. This
+applies everywhere the value is matched - content substitution, path/name
+renaming, and the residual check gate.
+
 **Export** (wipes only `<outputPath>/<sanitizedProjectName>` first so it
 exactly mirrors `<inputPath>`, then only touches that subfolder from there
 on; `<inputPath>` is read-only throughout):
@@ -239,3 +251,10 @@ contains only the `OpenDotnetApi` project - no leftover `InternalTools`
 `package-lock.json` residual-check exemption from step 5: content is never
 substituted for these two filenames, and the gate no longer fails on
 whatever real values are still in them.
+
+`MockNodeLibrary` additionally has a `dbHost`/`dbHostWithSuffix`/`ports`
+fixture exercising the integer/IPv4 boundary-matching exception: `dbHost`
+(`10.20.30.40`) and the first `ports` entry (`5432`) get sanitized, while
+`dbHostWithSuffix` (`10.20.30.400`) and the other `ports` entries (`15432`,
+`25432`) must not be touched even though the mapped value is a substring of
+each.

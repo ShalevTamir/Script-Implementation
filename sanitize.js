@@ -93,12 +93,35 @@ function loadMappingTable(mappingTablePath) {
 
 // ---------------------------------------------------------------------------
 // Plain substring substitution - if the text contains it, replace it.
+//
+// Exception: a value that's just digits, or shaped like an IPv4 address, is
+// treated as boundary-sensitive automatically (no mapping.json field needed -
+// it's a property of the value itself). Distinctive proprietary names don't
+// collide with unrelated text, but "5432" is also a substring of "154325"
+// and "2025432", and "10.0.0.5" is a substring of "10.0.0.55" - plain
+// substring replace would corrupt those unrelated numbers/addresses. Word
+// boundary here reuses isWordChar's definition (alnum + underscore).
 // ---------------------------------------------------------------------------
+
+const BOUNDARY_SENSITIVE_VALUE_PATTERN = /^(?:[0-9]+|[0-9]{1,3}(?:\.[0-9]{1,3}){3})$/;
+
+function isBoundarySensitiveValue(value) {
+  return BOUNDARY_SENSITIVE_VALUE_PATTERN.test(value);
+}
+
+function escapeRegExpChars(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function replaceAtBoundary(text, from, to) {
+  const pattern = new RegExp(`(?<![A-Za-z0-9_])${escapeRegExpChars(from)}(?![A-Za-z0-9_])`, 'g');
+  return text.replace(pattern, to);
+}
 
 function applySubstitution(text, pairs) {
   let result = text;
   for (const { from, to } of pairs) {
-    result = result.replaceAll(from, to);
+    result = isBoundarySensitiveValue(from) ? replaceAtBoundary(result, from, to) : result.replaceAll(from, to);
   }
   return result;
 }
@@ -445,7 +468,8 @@ function residualCheck(root, realValues, protectedTokens) {
     const name = path.basename(entryPath);
     const { hidden } = hideProtectedTokens(name, protectedTokens);
     for (const real of realValues) {
-      const hit = boundaryOnly ? containsMatchAtBoundary(hidden, real) : containsMatch(hidden, real);
+      const useBoundary = boundaryOnly || isBoundarySensitiveValue(real);
+      const hit = useBoundary ? containsMatchAtBoundary(hidden, real) : containsMatch(hidden, real);
       if (hit) findings.push({ file: entryPath, value: real, location: 'name' });
     }
   });
@@ -468,7 +492,8 @@ function residualCheck(root, realValues, protectedTokens) {
       const boundaryOnly = isUnderSkippedDir(root, filePath);
       const buffer = fs.readFileSync(filePath);
       for (const real of realValues) {
-        const hit = boundaryOnly ? bufferContainsValueAtBoundary(buffer, real) : bufferContainsValue(buffer, real);
+        const useBoundary = boundaryOnly || isBoundarySensitiveValue(real);
+        const hit = useBoundary ? bufferContainsValueAtBoundary(buffer, real) : bufferContainsValue(buffer, real);
         if (hit) findings.push({ file: filePath, value: real, location: 'content' });
       }
       return;
@@ -477,7 +502,8 @@ function residualCheck(root, realValues, protectedTokens) {
     const text = fs.readFileSync(filePath, 'utf8');
     const { hidden } = hideProtectedTokens(text, protectedTokens);
     for (const real of realValues) {
-      const hit = boundaryOnly ? containsMatchAtBoundary(hidden, real) : containsMatch(hidden, real);
+      const useBoundary = boundaryOnly || isBoundarySensitiveValue(real);
+      const hit = useBoundary ? containsMatchAtBoundary(hidden, real) : containsMatch(hidden, real);
       if (hit) findings.push({ file: filePath, value: real, location: 'content' });
     }
   });

@@ -8,7 +8,9 @@
     { "real": "mock-nest-api",     "mock": "open-nest-api" },
     { "real": "Falcon",            "mock": "Heron" },
     { "real": "InternalSecretKey", "mock": "SampleSecretKey" },
-    { "real": "nativ",             "mock": "innatiq" }
+    { "real": "nativ",             "mock": "innatiq" },
+    { "real": "10.20.30.40",       "mock": "10.99.99.99" },
+    { "real": "5432",              "mock": "9432" }
   ],
   "exclusions": [
     "MockDotnetLibrary/src/internal-only",
