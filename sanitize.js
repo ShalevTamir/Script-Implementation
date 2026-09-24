@@ -73,10 +73,12 @@ function loadMappingTable(mappingTablePath) {
   }
 
   const sortLongestFirst = (pairs) => [...pairs].sort((a, b) => b.from.length - a.from.length);
+  const exportPairs = sortLongestFirst(entries.map((e) => ({ from: e.real, to: e.mock })));
+  const importPairs = sortLongestFirst(entries.map((e) => ({ from: e.mock, to: e.real })));
 
   return {
-    forExport: () => sortLongestFirst(entries.map((e) => ({ from: e.real, to: e.mock }))),
-    forImport: () => sortLongestFirst(entries.map((e) => ({ from: e.mock, to: e.real }))),
+    forExport: () => exportPairs,
+    forImport: () => importPairs,
     realValues: () => entries.map((e) => e.real),
     // exclusions entries are "<projectBasename>/<pathRelativeToProjectRoot>" -
     // the shared table can list exclusions for many projects at once, so
@@ -90,9 +92,22 @@ function loadMappingTable(mappingTablePath) {
     // otherwise match a substring inside them - see hideProtectedTokens.
     protectedTokens: () => protectedTokens,
     // {name, value, mock} triples - see applyNamedValueSubstitution above.
-    namedValuesForExport: () => namedValues.map((e) => ({ name: e.name, from: e.value, to: e.mock })),
-    namedValuesForImport: () => namedValues.map((e) => ({ name: e.name, from: e.mock, to: e.value })),
-    namedValueReals: () => namedValues.map((e) => ({ name: e.name, value: e.value })),
+    //
+    // `name` is run through the same entries substitution that already ran
+    // right before this (applySubstitution, in substituteFileContents) - if
+    // the variable name itself is *also* a mapping entry (e.g. "dbHost" is
+    // both a namedValues name and an entries real value), that earlier pass
+    // has already renamed it in the text by the time namedValues runs, so
+    // matching on the literal name as written in mapping.json would never
+    // find the line again. Converting `name` here keeps it in sync with
+    // whatever the text actually contains at that point.
+    namedValuesForExport: () =>
+      namedValues.map((e) => ({ name: applySubstitution(e.name, exportPairs), from: e.value, to: e.mock })),
+    namedValuesForImport: () =>
+      namedValues.map((e) => ({ name: applySubstitution(e.name, importPairs), from: e.mock, to: e.value })),
+    // residualCheck always runs against an exported (sanitized) tree, so the
+    // name to search for is its export-converted form too.
+    namedValueReals: () => namedValues.map((e) => ({ name: applySubstitution(e.name, exportPairs), value: e.value })),
   };
 }
 

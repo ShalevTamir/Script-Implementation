@@ -37,6 +37,12 @@ function provideNativeDateAdapter() {
 const dbHost = '10.20.30.40';
 const ports = [5432, 15432, 25432];
 
+// AdminPort's own identifier is also a regular entries mapping value,
+// renamed before namedValues ever runs. namedValues' "name" is converted
+// the same way internally, so it still finds this line under its post-rename
+// identifier and converts the tied port value too - not just the identifier.
+const AdminPort = 5432;
+
 module.exports = {
   FalconZone,
   describe,
@@ -46,4 +52,5 @@ module.exports = {
   provideNativeDateAdapter,
   dbHost,
   ports,
+  AdminPort,
 };

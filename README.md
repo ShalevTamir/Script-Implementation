@@ -131,6 +131,15 @@ exact false-positive problem this feature exists to avoid). Use `namedValues`
 only when the name reliably sits next to the value everywhere it matters;
 otherwise a real, distinctive value still belongs in `entries`.
 
+`name` doesn't have to be a distinct concept from `entries` - if the
+variable/key name itself is *also* a regular `entries` mapping value (e.g.
+`AdminPort` is both a `namedValues` name and gets renamed to `ServicePort`
+by `entries`), the `name` used to find the line is converted the same way
+internally before matching, since the earlier `entries` substitution pass
+has already renamed it in the text by the time `namedValues` runs -
+matching on the literal name as written in `mapping.json` would otherwise
+never find the line again after the identifier itself was renamed.
+
 ## What the script does
 
 Substitution is plain substring replace (`text.replaceAll(from, to)`) — if a
@@ -273,4 +282,7 @@ whatever real values are still in them.
 `namedValues`: `dbHost`'s line converts (its name and value are both
 present), and `ports`' line converts only its exact `5432` token - the
 other `ports` entries (`15432`, `25432`) must not be touched even though the
-mapped value is a substring of each.
+mapped value is a substring of each. It also has an `AdminPort` fixture
+exercising the converted-name case above: `AdminPort` is both a `namedValues`
+name and an `entries` real value, and after export it's `ServicePort = 9432`
+- both the renamed identifier and its tied port value.

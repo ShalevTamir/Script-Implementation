@@ -8,7 +8,8 @@
     { "real": "mock-nest-api",     "mock": "open-nest-api" },
     { "real": "Falcon",            "mock": "Heron" },
     { "real": "InternalSecretKey", "mock": "SampleSecretKey" },
-    { "real": "nativ",             "mock": "innatiq" }
+    { "real": "nativ",             "mock": "innatiq" },
+    { "real": "AdminPort",         "mock": "ServicePort" }
   ],
   "exclusions": [
     "MockDotnetLibrary/src/internal-only",
@@ -17,7 +18,8 @@
   ],
   "protectedTokens": ["nativeElement", "provideNativeDateAdapter"],
   "namedValues": [
-    { "name": "dbHost", "value": "10.20.30.40", "mock": "10.99.99.99" },
-    { "name": "ports",  "value": "5432",        "mock": "9432" }
+    { "name": "dbHost",    "value": "10.20.30.40", "mock": "10.99.99.99" },
+    { "name": "ports",     "value": "5432",        "mock": "9432" },
+    { "name": "AdminPort", "value": "5432",        "mock": "9432" }
   ]
 }
