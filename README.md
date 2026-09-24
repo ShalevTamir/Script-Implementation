@@ -144,10 +144,10 @@ on; `<inputPath>` is read-only throughout):
    `integrity` hashes are computed against the *real* package name/tarball,
    so text-substituting a dependency name in place doesn't re-resolve or
    re-hash anything; it just produces a lockfile that looks renamed but is
-   actually broken. If a project's `package.json` legitimately needs a
-   dependency name renamed (e.g. it depends on another exported project),
-   list that `package.json` in `exclusions` instead, same as any other
-   must-not-ship-as-is file - see the pilots table below.
+   actually broken. They ship as-is, real values and all (e.g. a
+   `package.json` depending on another exported project keeps its real
+   dependency name) - the residual check exempts these two filenames from
+   gate failures for exactly this reason (see step 5).
 5. Re-scan the output for any real value that's still present and fail
    loudly if so — nothing should be pushed if this gate fails. Checks both a
    file/directory's own name and its contents - renaming already happens in
@@ -190,6 +190,13 @@ on; `<inputPath>` is read-only throughout):
    *names* are still checked normally either way - that's ordinary
    human-authored text, not noise.
 
+   `package.json` and `package-lock.json` are excluded from content scanning
+   entirely too, for the same reason step 4 never rewrites them: their
+   content isn't touched, so a real value there (e.g. a dependency on
+   another exported project) isn't a leak the tool introduced, and it
+   shouldn't block export. File/directory names for these two are still
+   checked normally.
+
 **Import** (additive only, never deletes pre-existing content at
 `<outputPath>`):
 1. Copy `<inputPath>` onto `<outputPath>` as an overlay.
@@ -227,9 +234,8 @@ solution-reference cleanup: after export, the `.sln` still parses and
 contains only the `OpenDotnetApi` project - no leftover `InternalTools`
 `Project` block or orphaned GUID lines.
 
-`MockNodeLibrary` and `MockNestApi`'s `package.json` are both listed in
-`exclusions` - their real dependency name/values (`mock-node-library`,
-`MockNodeLibrary`, `mock-nest-api`) would otherwise fail the residual check,
-since `package.json`/`package-lock.json` content is never substituted (see
-step 4 above); a real project depending on a renamed one needs its own
-`package.json` handled the same way.
+`MockNestApi`'s `package.json` ships with its real dependency
+(`mock-node-library`) intact, exercising the `package.json`/
+`package-lock.json` residual-check exemption from step 5: content is never
+substituted for these two filenames, and the gate no longer fails on
+whatever real values are still in them.

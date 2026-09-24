@@ -13,9 +13,7 @@
   "exclusions": [
     "MockDotnetLibrary/src/internal-only",
     "MockDotnetLibrary/src/internal-only.cs",
-    "MockDotnetApi/src/InternalTools",
-    "MockNodeLibrary/package.json",
-    "MockNestApi/package.json"
+    "MockDotnetApi/src/InternalTools"
   ],
   "protectedTokens": ["nativeElement", "provideNativeDateAdapter"]
 }
