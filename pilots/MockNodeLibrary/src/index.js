@@ -29,4 +29,22 @@ function provideNativeDateAdapter() {
   return 'Angular Material API - must stay untouched';
 }
 
-module.exports = { FalconZone, describe, getSecretKeyName, nativApp, nativeElement, provideNativeDateAdapter };
+// Integers/IPs are boundary-matched automatically (see isBoundarySensitiveValue
+// in sanitize.js): dbHost and the first port get sanitized since they match
+// the mapping table exactly, but 15432/25432 must stay untouched even though
+// "5432" is a substring of both - a plain substring replace would corrupt them.
+const dbHost = '10.20.30.40';
+const dbHostWithSuffix = '10.20.30.400'; // must stay untouched - not an exact match
+const ports = [5432, 15432, 25432];
+
+module.exports = {
+  FalconZone,
+  describe,
+  getSecretKeyName,
+  nativApp,
+  nativeElement,
+  provideNativeDateAdapter,
+  dbHost,
+  dbHostWithSuffix,
+  ports,
+};
