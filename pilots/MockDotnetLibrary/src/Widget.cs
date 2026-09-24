@@ -8,7 +8,6 @@ namespace MockDotnetLibrary
 
     public class WidgetService
     {
-        // classified debug note: never leave this in an exported build
         private const string InternalSecretKey = "InternalSecretKey";
 
         public string Describe(FalconZone zone)
