@@ -45,7 +45,7 @@ For import, `<outputPath>` is normally the internal project itself (an
 in-place import, reconstructing real values back into your working copy).
 `<inputPath>` is only ever read, never written to, for export/import.
 
-`verify` runs only the residual check (step 6 below) against an
+`verify` runs only the residual check (step 5 below) against an
 already-existing path — no copy, no substitution, no other pass. Useful for
 re-checking an export's output later (e.g. after a separate CI build step
 regenerates `bin`/`dist`) without redoing the whole export.
@@ -59,7 +59,7 @@ One shared `MappingTable/mapping.json`, defaults to the copy next to
 {
   "entries": [{ "real": "...", "mock": "..." }],
   "exclusions": ["MockDotnetLibrary/src/internal-only", "MockDotnetLibrary/src/internal-only.cs"],
-  "linesToRemove": ["*classified debug note*"]
+  "protectedTokens": ["nativeElement", "provideNativeDateAdapter"]
 }
 ```
 
@@ -80,17 +80,30 @@ never part of the exported/public tree, import copies `<inputPath>` onto
 there) — so pre-existing excluded files at the destination are simply never
 touched.
 
-### Lines to remove (glob patterns, export only)
+### Protected tokens (global, not project-scoped)
 
-`linesToRemove` is a flat list of glob patterns (`*` = any run of
-characters, everything else literal, matched against the whole line) applied
-across every project. Any line matching any pattern is deleted entirely
-during export. For a line `The cat is very high`, any of `*cat is*`,
-`*cat is very high`, or `The cat*` matches it.
+`protectedTokens` is a flat list of exact literal strings that must never be
+touched by rename, content substitution, or the residual check, anywhere
+they appear, across every project - unlike `exclusions`, this isn't scoped
+per project, since these are typically framework/API keywords rather than
+project-specific paths.
 
-This only runs on export, not import: deleting a line loses information
-there's nothing to reverse-map back from, unlike substitution or exclusion
-(which just skips copying a file that still exists at the source).
+This exists because plain substring matching has no concept of "this real
+value is part of an unrelated, longer identifier": if a real value happens
+to be a substring of some common framework member name, substitution would
+corrupt code that was never meant to change. The canonical example is
+Angular: a real value like `nativ` sits right at the start of both
+`ElementRef.nativeElement` and Angular Material's
+`provideNativeDateAdapter`, so without protection, sanitizing `nativ` would
+mangle every reference to either into a broken identifier.
+
+A protected token is hidden (swapped for an internal marker) before any
+matching runs, then restored afterward - so `nativeElement` itself is never
+touched, while `nativ` elsewhere (e.g. inside `nativApp`, as its own
+identifier, in a comment) still gets substituted completely normally. It's
+not a per-value setting - list the exact framework identifier, not the
+colliding real value, so everything else that value legitimately matches
+keeps working.
 
 ## What the script does
 
@@ -113,10 +126,9 @@ on; `<inputPath>` is read-only throughout):
    EndProject` block removed, along with every `GlobalSection` line keyed by
    that project's GUID - otherwise the solution would still reference a
    project file that no longer exists.
-3. Delete any line matching a `linesToRemove` glob pattern.
-4. Rename files/directories whose name contains a mapping entry, deepest
+3. Rename files/directories whose name contains a mapping entry, deepest
    path first.
-5. Substitute matching text in every non-binary file — one pass covers
+4. Substitute matching text in every non-binary file — one pass covers
    identifiers, comments, string literals, JSON keys/values, XML attributes,
    markdown, anything, since it's all just text. Binary files (DLLs,
    already-bundled output) are left untouched here - rewriting bytes inside
@@ -136,17 +148,17 @@ on; `<inputPath>` is read-only throughout):
    dependency name renamed (e.g. it depends on another exported project),
    list that `package.json` in `exclusions` instead, same as any other
    must-not-ship-as-is file - see the pilots table below.
-6. Re-scan the output for any real value that's still present and fail
+5. Re-scan the output for any real value that's still present and fail
    loudly if so — nothing should be pushed if this gate fails. Checks both a
    file/directory's own name and its contents - renaming already happens in
-   step 4, but the gate re-checks names independently rather than trusting
+   step 3, but the gate re-checks names independently rather than trusting
    that pass (`verify` in particular may run standalone against a tree that
    was never renamed). Binary files are checked too, by searching their raw
    bytes for each real value UTF-8- and UTF-16LE-encoded (compiled .NET
    assemblies store
    type/method/string names UTF-16LE in their metadata), so a leak baked
    into a DLL still fails the gate even though it wasn't (and can't safely
-   be) rewritten in step 5 - the fix is rebuilding from sanitized source,
+   be) rewritten in step 4 - the fix is rebuilding from sanitized source,
    not patching the binary. Since `bin`/`dist` are skipped during copy (step
    1), this only sees whatever compiled output happens to already be at
    `<inputPath>` — rebuild from the sanitized source and run `verify
@@ -174,7 +186,7 @@ on; `<inputPath>` is read-only throughout):
    real chance of turning up purely by chance. These extensions are always
    treated as binary here too (never text), independent of the NUL-byte
    sniff, so a small asset with no NUL byte in it can't be misread as text
-   and corrupted on write-back during substitution (step 5). File/directory
+   and corrupted on write-back during substitution (step 4). File/directory
    *names* are still checked normally either way - that's ordinary
    human-authored text, not noise.
 
@@ -219,5 +231,5 @@ contains only the `OpenDotnetApi` project - no leftover `InternalTools`
 `exclusions` - their real dependency name/values (`mock-node-library`,
 `MockNodeLibrary`, `mock-nest-api`) would otherwise fail the residual check,
 since `package.json`/`package-lock.json` content is never substituted (see
-step 5 above); a real project depending on a renamed one needs its own
+step 4 above); a real project depending on a renamed one needs its own
 `package.json` handled the same way.

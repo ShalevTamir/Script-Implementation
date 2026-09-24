@@ -20,4 +20,13 @@ function getSecretKeyName() {
   return InternalSecretKey;
 }
 
-module.exports = { FalconZone, describe, getSecretKeyName };
+// nativApp contains "nativ" as a substring and still gets sanitized;
+// nativeElement and provideNativeDateAdapter are protected tokens (Angular
+// API members) and must stay untouched even though both also contain "nativ".
+const nativApp = 'nativ config label';
+const nativeElement = 'DOM API member - must stay untouched';
+function provideNativeDateAdapter() {
+  return 'Angular Material API - must stay untouched';
+}
+
+module.exports = { FalconZone, describe, getSecretKeyName, nativApp, nativeElement, provideNativeDateAdapter };
