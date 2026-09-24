@@ -59,6 +59,7 @@ function loadMappingTable(mappingTablePath) {
     entries = [],
     exclusions = [],
     protectedTokens = [],
+    namedValues = [],
   } = JSON.parse(fs.readFileSync(mappingTablePath, 'utf8'));
 
   const seenReal = new Set();
@@ -88,25 +89,27 @@ function loadMappingTable(mappingTablePath) {
     // rename/substitution/residual-check, even though a mapping value might
     // otherwise match a substring inside them - see hideProtectedTokens.
     protectedTokens: () => protectedTokens,
+    // {name, value, mock} triples - see applyNamedValueSubstitution above.
+    namedValuesForExport: () => namedValues.map((e) => ({ name: e.name, from: e.value, to: e.mock })),
+    namedValuesForImport: () => namedValues.map((e) => ({ name: e.name, from: e.mock, to: e.value })),
+    namedValueReals: () => namedValues.map((e) => ({ name: e.name, value: e.value })),
   };
 }
 
 // ---------------------------------------------------------------------------
 // Plain substring substitution - if the text contains it, replace it.
-//
-// Exception: a value that's just digits, or shaped like an IPv4 address, is
-// treated as boundary-sensitive automatically (no mapping.json field needed -
-// it's a property of the value itself). Distinctive proprietary names don't
-// collide with unrelated text, but "5432" is also a substring of "154325"
-// and "2025432", and "10.0.0.5" is a substring of "10.0.0.55" - plain
-// substring replace would corrupt those unrelated numbers/addresses. Word
-// boundary here reuses isWordChar's definition (alnum + underscore).
 // ---------------------------------------------------------------------------
 
-const BOUNDARY_SENSITIVE_VALUE_PATTERN = /^(?:[0-9]+|[0-9]{1,3}(?:\.[0-9]{1,3}){3})$/;
+function applySubstitution(text, pairs) {
+  let result = text;
+  for (const { from, to } of pairs) {
+    result = result.replaceAll(from, to);
+  }
+  return result;
+}
 
-function isBoundarySensitiveValue(value) {
-  return BOUNDARY_SENSITIVE_VALUE_PATTERN.test(value);
+function containsMatch(text, needle) {
+  return text.includes(needle);
 }
 
 function escapeRegExpChars(value) {
@@ -118,16 +121,44 @@ function replaceAtBoundary(text, from, to) {
   return text.replace(pattern, to);
 }
 
-function applySubstitution(text, pairs) {
-  let result = text;
-  for (const { from, to } of pairs) {
-    result = isBoundarySensitiveValue(from) ? replaceAtBoundary(result, from, to) : result.replaceAll(from, to);
-  }
-  return result;
+function containsMatchAtLineBoundary(text, needle) {
+  const pattern = new RegExp(`(?<![A-Za-z0-9_])${escapeRegExpChars(needle)}(?![A-Za-z0-9_])`);
+  return pattern.test(text);
 }
 
-function containsMatch(text, needle) {
-  return text.includes(needle);
+// ---------------------------------------------------------------------------
+// Named values - a mapping.json "namedValues" entry ({name, value, mock}) is
+// matched only on a line that contains both the exact variable/key `name`
+// and the exact `value`, e.g. `const dbHost = '10.20.30.40';` or
+// `"dbHost": "10.20.30.40"`. Unlike a mapping table `entries` value (assumed
+// distinctive enough to be safe as a global substring match), this exists
+// for values too generic/short to safely match everywhere on their own
+// (ports, IDs, IPs) - scoping the match to "only when tied to this specific
+// name" is precise without needing any shape-based heuristics. Both the name
+// check and the value replacement use a word boundary so e.g. a `ports`
+// line's `5432` doesn't also clobber `15432` sitting on the same line.
+// ---------------------------------------------------------------------------
+
+function applyNamedValueSubstitution(text, namedValuePairs) {
+  if (namedValuePairs.length === 0) return text;
+  return text
+    .split('\n')
+    .map((line) => {
+      let updated = line;
+      for (const { name, from, to } of namedValuePairs) {
+        if (containsMatchAtLineBoundary(updated, name) && containsMatchAtLineBoundary(updated, from)) {
+          updated = replaceAtBoundary(updated, from, to);
+        }
+      }
+      return updated;
+    })
+    .join('\n');
+}
+
+function lineContainsNamedValue(text, name, value) {
+  return text
+    .split('\n')
+    .some((line) => containsMatchAtLineBoundary(line, name) && containsMatchAtLineBoundary(line, value));
 }
 
 // ---------------------------------------------------------------------------
@@ -346,13 +377,14 @@ function renamePaths(root, pairs, protectedTokens) {
 // real value (e.g. depending on a renamed sibling) would always fail.
 const PACKAGE_LOCKFILE_FILENAMES = new Set(['package.json', 'package-lock.json']);
 
-function substituteFileContents(root, pairs, protectedTokens) {
+function substituteFileContents(root, pairs, protectedTokens, namedValuePairs) {
   walkFiles(root, (filePath) => {
     if (isBinaryFile(filePath)) return;
     if (PACKAGE_LOCKFILE_FILENAMES.has(path.basename(filePath))) return;
     const original = fs.readFileSync(filePath, 'utf8');
     const { hidden, restore } = hideProtectedTokens(original, protectedTokens);
-    const updated = restore(applySubstitution(hidden, pairs));
+    const substituted = applyNamedValueSubstitution(applySubstitution(hidden, pairs), namedValuePairs);
+    const updated = restore(substituted);
     if (updated !== original) fs.writeFileSync(filePath, updated, 'utf8');
   });
 }
@@ -457,7 +489,7 @@ function bufferContainsValueAtBoundary(buffer, value) {
   );
 }
 
-function residualCheck(root, realValues, protectedTokens) {
+function residualCheck(root, realValues, protectedTokens, namedValueReals) {
   const findings = [];
 
   // File/directory names - renamePaths already handles this on export, but
@@ -468,8 +500,7 @@ function residualCheck(root, realValues, protectedTokens) {
     const name = path.basename(entryPath);
     const { hidden } = hideProtectedTokens(name, protectedTokens);
     for (const real of realValues) {
-      const useBoundary = boundaryOnly || isBoundarySensitiveValue(real);
-      const hit = useBoundary ? containsMatchAtBoundary(hidden, real) : containsMatch(hidden, real);
+      const hit = boundaryOnly ? containsMatchAtBoundary(hidden, real) : containsMatch(hidden, real);
       if (hit) findings.push({ file: entryPath, value: real, location: 'name' });
     }
   });
@@ -492,8 +523,7 @@ function residualCheck(root, realValues, protectedTokens) {
       const boundaryOnly = isUnderSkippedDir(root, filePath);
       const buffer = fs.readFileSync(filePath);
       for (const real of realValues) {
-        const useBoundary = boundaryOnly || isBoundarySensitiveValue(real);
-        const hit = useBoundary ? bufferContainsValueAtBoundary(buffer, real) : bufferContainsValue(buffer, real);
+        const hit = boundaryOnly ? bufferContainsValueAtBoundary(buffer, real) : bufferContainsValue(buffer, real);
         if (hit) findings.push({ file: filePath, value: real, location: 'content' });
       }
       return;
@@ -502,9 +532,13 @@ function residualCheck(root, realValues, protectedTokens) {
     const text = fs.readFileSync(filePath, 'utf8');
     const { hidden } = hideProtectedTokens(text, protectedTokens);
     for (const real of realValues) {
-      const useBoundary = boundaryOnly || isBoundarySensitiveValue(real);
-      const hit = useBoundary ? containsMatchAtBoundary(hidden, real) : containsMatch(hidden, real);
+      const hit = boundaryOnly ? containsMatchAtBoundary(hidden, real) : containsMatch(hidden, real);
       if (hit) findings.push({ file: filePath, value: real, location: 'content' });
+    }
+    for (const { name, value } of namedValueReals) {
+      if (lineContainsNamedValue(hidden, name, value)) {
+        findings.push({ file: filePath, value, location: 'content' });
+      }
     }
   });
 
@@ -553,9 +587,9 @@ function runExport(inputRoot, outputRoot) {
   cleanSolutionReferences(projectRoot, excludedCsprojBasenames);
 
   renamePaths(projectRoot, exportPairs, mapping.protectedTokens());
-  substituteFileContents(projectRoot, exportPairs, mapping.protectedTokens());
+  substituteFileContents(projectRoot, exportPairs, mapping.protectedTokens(), mapping.namedValuesForExport());
 
-  const findings = residualCheck(projectRoot, mapping.realValues(), mapping.protectedTokens());
+  const findings = residualCheck(projectRoot, mapping.realValues(), mapping.protectedTokens(), mapping.namedValueReals());
   const passed = reportResidualFindings(
     'EXPORT FAILED - residual sensitive values found. Nothing should be pushed.',
     findings
@@ -573,7 +607,7 @@ function runExport(inputRoot, outputRoot) {
 // (or any other tree) later without redoing the whole export.
 function runVerify(targetPath) {
   const mapping = loadMappingTable(DEFAULT_MAPPING_TABLE_PATH);
-  const findings = residualCheck(targetPath, mapping.realValues(), mapping.protectedTokens());
+  const findings = residualCheck(targetPath, mapping.realValues(), mapping.protectedTokens(), mapping.namedValueReals());
   const passed = reportResidualFindings('VERIFY FAILED - residual sensitive values found.', findings);
   if (!passed) {
     process.exitCode = 1;
@@ -593,7 +627,7 @@ function runImport(inputRoot, outputRoot) {
   // snapshot-and-restore needed.
   copyRecursive(inputRoot, outputRoot);
   renamePaths(outputRoot, mapping.forImport(), mapping.protectedTokens());
-  substituteFileContents(outputRoot, mapping.forImport(), mapping.protectedTokens());
+  substituteFileContents(outputRoot, mapping.forImport(), mapping.protectedTokens(), mapping.namedValuesForImport());
 
   console.log(`IMPORT COMPLETE. Reconstructed tree at: ${outputRoot}`);
 }
