@@ -83,9 +83,30 @@ function loadMappingTable(mappingTablePath) {
     // exclusions entries are "<projectBasename>/<pathRelativeToProjectRoot>" -
     // the shared table can list exclusions for many projects at once, so
     // each one is scoped by which project's own folder name it starts with.
+    //
+    // Both the project-basename prefix and the relative path after it are
+    // also checked against their entries-substituted (mock) form: an
+    // exclusion can be authored using either the real or the mock project
+    // name as its prefix (e.g. "MockDotnetLibrary/..." or
+    // "OpenDotnetLibrary/..."), and a path segment further in that happens
+    // to also be an entries value (e.g. excluding a "Falcon-internal"
+    // folder where "Falcon" is a mapping entry) is matched either way too -
+    // exclusions are resolved against the pre-rename tree (stripped before
+    // renamePaths runs), so this only ever adds extra candidates, never
+    // narrows what already matched.
     excludedPathsFor: (projectBasename) => {
-      const prefix = `${projectBasename}/`;
-      return exclusions.filter((entry) => entry.startsWith(prefix)).map((entry) => entry.slice(prefix.length));
+      const mockBasename = applySubstitution(projectBasename, exportPairs);
+      const prefixes = [`${projectBasename}/`, ...(mockBasename !== projectBasename ? [`${mockBasename}/`] : [])];
+
+      const relativePaths = new Set();
+      for (const entry of exclusions) {
+        const matchedPrefix = prefixes.find((prefix) => entry.startsWith(prefix));
+        if (!matchedPrefix) continue;
+        const relativePath = entry.slice(matchedPrefix.length);
+        relativePaths.add(relativePath);
+        relativePaths.add(applySubstitution(relativePath, exportPairs));
+      }
+      return [...relativePaths];
     },
     // Literal strings (e.g. "nativeElement") that must never be touched by
     // rename/substitution/residual-check, even though a mapping value might
