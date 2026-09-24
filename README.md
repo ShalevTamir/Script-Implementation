@@ -59,7 +59,8 @@ One shared `MappingTable/mapping.json`, defaults to the copy next to
 {
   "entries": [{ "real": "...", "mock": "..." }],
   "exclusions": ["MockDotnetLibrary/src/internal-only", "MockDotnetLibrary/src/internal-only.cs"],
-  "protectedTokens": ["nativeElement", "provideNativeDateAdapter"]
+  "protectedTokens": ["nativeElement", "provideNativeDateAdapter"],
+  "namedValues": [{ "name": "dbHost", "value": "...", "mock": "..." }]
 }
 ```
 
@@ -105,6 +106,31 @@ not a per-value setting - list the exact framework identifier, not the
 colliding real value, so everything else that value legitimately matches
 keeps working.
 
+### Named values (`namedValues` - scoped to a specific variable/key name)
+
+`entries` assumes a real value is distinctive enough to match safely as a
+global substring anywhere it appears. That doesn't hold for things like
+ports, numeric IDs, or IP addresses - `5432` is also a substring of `15432`
+and `2025432`, and `10.20.30.40` is a substring of `10.20.30.400`, so a
+generic entry would corrupt unrelated values that merely contain it.
+
+`namedValues` handles this by scoping the match to a specific line: each
+entry is `{ name, value, mock }`, and a `value` is only replaced on a line
+that also contains its exact `name` - e.g. `const dbHost = '10.20.30.40';`
+or `"dbHost": "10.20.30.40"`. The same value sitting on a line without its
+tied name (a different variable, an unrelated array element) is left alone,
+so `5432` in `const ports = [5432, 15432, 25432]` only converts the exact
+`5432` token, never `15432`/`25432`, without needing any shape-based
+heuristics - the scoping does the work.
+
+This trades recall for precision: if the real value ever appears somewhere
+its tied name isn't nearby, `namedValues` won't touch it and the residual
+check won't flag it either (the check applies the same name+value scoping,
+by design, since checking the bare value everywhere would reintroduce the
+exact false-positive problem this feature exists to avoid). Use `namedValues`
+only when the name reliably sits next to the value everywhere it matters;
+otherwise a real, distinctive value still belongs in `entries`.
+
 ## What the script does
 
 Substitution is plain substring replace (`text.replaceAll(from, to)`) — if a
@@ -112,18 +138,6 @@ mapping entry's value appears anywhere in the text, it's replaced, no word
 boundaries. Entries are applied longest-value-first so a longer match (e.g.
 `TelemetryVaultLib`) isn't partially clobbered by a shorter one (`Telemetry`)
 being replaced first.
-
-**Exception: integers and IPv4 addresses.** A mapping value that's just
-digits (e.g. a port, `5432`) or shaped like an IPv4 address (e.g.
-`10.20.30.40`) is matched at a real word boundary instead of as a plain
-substring, automatically — no config needed, it's inferred from the value's
-own shape. Distinctive proprietary names essentially never collide with
-unrelated text, but short numeric/IP-shaped values constantly do: `5432` is
-also a substring of `15432` and `2025432`, and `10.20.30.40` is a substring
-of `10.20.30.400`. Plain substring replace would corrupt those unrelated
-values; boundary matching only touches an exact standalone occurrence. This
-applies everywhere the value is matched - content substitution, path/name
-renaming, and the residual check gate.
 
 **Export** (wipes only `<outputPath>/<sanitizedProjectName>` first so it
 exactly mirrors `<inputPath>`, then only touches that subfolder from there
@@ -150,6 +164,9 @@ on; `<inputPath>` is read-only throughout):
    high-entropy noise), which are always treated as binary regardless of
    that sniff - a small font/image can have no NUL byte at all within the
    sniff window, and misreading it as text here would corrupt it on write-back.
+   After `entries` substitution, `namedValues` runs as a second pass scoped
+   to lines containing both the tied name and value (see the Named values
+   section above).
 
    `package.json` and `package-lock.json` are exempt from this step (their
    content is left exactly as copied) - a lockfile's `resolved` URLs and
@@ -252,9 +269,8 @@ contains only the `OpenDotnetApi` project - no leftover `InternalTools`
 substituted for these two filenames, and the gate no longer fails on
 whatever real values are still in them.
 
-`MockNodeLibrary` additionally has a `dbHost`/`dbHostWithSuffix`/`ports`
-fixture exercising the integer/IPv4 boundary-matching exception: `dbHost`
-(`10.20.30.40`) and the first `ports` entry (`5432`) get sanitized, while
-`dbHostWithSuffix` (`10.20.30.400`) and the other `ports` entries (`15432`,
-`25432`) must not be touched even though the mapped value is a substring of
-each.
+`MockNodeLibrary` additionally has a `dbHost`/`ports` fixture exercising
+`namedValues`: `dbHost`'s line converts (its name and value are both
+present), and `ports`' line converts only its exact `5432` token - the
+other `ports` entries (`15432`, `25432`) must not be touched even though the
+mapped value is a substring of each.

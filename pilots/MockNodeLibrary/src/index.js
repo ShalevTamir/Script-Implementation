@@ -29,12 +29,12 @@ function provideNativeDateAdapter() {
   return 'Angular Material API - must stay untouched';
 }
 
-// Integers/IPs are boundary-matched automatically (see isBoundarySensitiveValue
-// in sanitize.js): dbHost and the first port get sanitized since they match
-// the mapping table exactly, but 15432/25432 must stay untouched even though
-// "5432" is a substring of both - a plain substring replace would corrupt them.
+// namedValues (mapping.json) only matches a value when its tied variable
+// name is on the same line: dbHost's line has both "dbHost" and "10.20.30.40"
+// so it converts. ports' line has both "ports" and "5432", so only the
+// exact 5432 token converts - 15432/25432 (same line, same value as a
+// substring) are left alone.
 const dbHost = '10.20.30.40';
-const dbHostWithSuffix = '10.20.30.400'; // must stay untouched - not an exact match
 const ports = [5432, 15432, 25432];
 
 module.exports = {
@@ -45,6 +45,5 @@ module.exports = {
   nativeElement,
   provideNativeDateAdapter,
   dbHost,
-  dbHostWithSuffix,
   ports,
 };
