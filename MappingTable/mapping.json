@@ -14,7 +14,8 @@
   "exclusions": [
     "MockDotnetLibrary/src/internal-only",
     "MockDotnetLibrary/src/internal-only.cs",
-    "MockDotnetApi/src/InternalTools"
+    "MockDotnetApi/src/InternalTools",
+    "OpenDotnetLibrary/src/mock-authored-secret"
   ],
   "protectedTokens": ["nativeElement", "provideNativeDateAdapter"],
   "namedValues": [

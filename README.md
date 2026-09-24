@@ -74,6 +74,16 @@ bare name) stripped from the project root — so `internal-only.js` sitting in
 some *other* project, not listed under its name, is left alone. No
 `exclusions.json`, no per-repo setup.
 
+The basename prefix matches either the project's real or its entries-mapped
+mock name - `"MockDotnetLibrary/..."` and `"OpenDotnetLibrary/..."` both
+resolve to the same project, so an exclusion can be authored using whichever
+name comes to mind. The remaining path is also checked against its
+entries-substituted form, so a path segment that happens to also be an
+entries value (e.g. a `Falcon-internal` folder where `Falcon` is a mapping
+entry) matches either way too. Exclusions are still stripped from the
+pre-rename copy (before `renamePaths` runs), so this only ever adds
+candidates to check, never changes what actually gets removed.
+
 Nothing special is needed to "restore" them on import: since they were
 never part of the exported/public tree, import copies `<inputPath>` onto
 `<outputPath>` as an *overlay* (only adds/overwrites files present in
@@ -264,7 +274,10 @@ because both sides read the same shared mapping table.
 
 `MockDotnetLibrary` additionally has `src/internal-only/live-secrets.txt`
 and `src/internal-only.cs`, exercising the mapping table's `exclusions` list
-— both must never appear in export output.
+— both must never appear in export output. It also has
+`src/mock-authored-secret/live-secret.txt`, listed in `exclusions` under the
+project's *mock* name (`OpenDotnetLibrary/...`) rather than its real name
+(`MockDotnetLibrary/...`) - exercising the either-name prefix match.
 
 `MockDotnetApi` additionally has `MockDotnetApi.sln` referencing both itself
 and an excluded `src/InternalTools/InternalTools.csproj`, exercising the
